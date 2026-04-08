@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Cell } from 'recharts';
 import { Metrics, Station, GlobalSettings, Connection } from '../types';
 import { MetricCard } from './MetricCard';
-import { AlertCircle, Info } from 'lucide-react';
+import { AlertCircle, Info, BarChart2, Hash } from 'lucide-react';
 
 interface SummaryPanelProps {
   metrics: Metrics;
@@ -13,13 +13,10 @@ interface SummaryPanelProps {
 }
 
 export function SummaryPanel({ metrics, stations, connections, settings, height }: SummaryPanelProps) {
+  const [activeTab, setActiveTab] = useState<'balance' | 'histogram'>('balance');
   const chartData = stations.map(s => {
     const flowFactor = metrics.flowFactors?.[s.id] || 0;
-    const isAutoBalanced = s.isAutoBalanced || settings.autoBalanceAll;
-    const workers = isAutoBalanced 
-      ? Math.max(1, Math.ceil((s.cycleTime * flowFactor) / metrics.adjustedTakt))
-      : s.workers;
-    const effectiveCT = s.cycleTime / workers;
+    const effectiveCT = s.type === 'machine' ? s.cycleTime / (s.batchSize || 1) : s.cycleTime / s.fte;
     const load = effectiveCT * flowFactor;
     
     return {
@@ -61,6 +58,27 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
 
     return errors;
   });
+
+  const histogramData = useMemo(() => {
+    const activeStations = stations.filter(s => s.type !== 'inventory');
+    if (activeStations.length === 0) return [];
+    
+    const cts = activeStations.map(s => s.cycleTime);
+    const min = Math.min(...cts);
+    const max = Math.max(...cts);
+    const bins = 5;
+    const step = (max - min) / bins || 1;
+    
+    return Array.from({ length: bins }, (_, i) => {
+      const low = min + i * step;
+      const high = low + step;
+      const count = cts.filter(v => v >= low && (i === bins - 1 ? v <= high : v < high)).length;
+      return {
+        range: `${low.toFixed(1)}-${high.toFixed(1)}`,
+        count
+      };
+    });
+  }, [stations]);
 
   return (
     <div style={{ height }} className="bg-white border-t border-slate-200 flex flex-col z-10">
@@ -119,62 +137,119 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
         </div>
 
         <div className="flex-1 p-4 flex flex-col min-w-0">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Station Balance Chart</h3>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-blue-500" />
-                <span className="text-[9px] font-bold text-slate-500 uppercase">Station Load</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-orange-500" />
-                <span className="text-[9px] font-bold text-slate-500 uppercase">Bottleneck</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-8 h-px bg-red-400 border-t border-dashed border-red-400" />
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Takt Time</span>
-              </div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex bg-slate-100 p-1 rounded-lg">
+              <button
+                onClick={() => setActiveTab('balance')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  activeTab === 'balance' 
+                    ? 'bg-white text-blue-600 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <BarChart2 size={14} />
+                Station Balance
+              </button>
+              <button
+                onClick={() => setActiveTab('histogram')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  activeTab === 'histogram' 
+                    ? 'bg-white text-purple-600 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Hash size={14} />
+                CT Distribution
+              </button>
             </div>
+
+            {activeTab === 'balance' && (
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-blue-500" />
+                  <span className="text-[9px] font-bold text-slate-500 uppercase">Station Load</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-orange-500" />
+                  <span className="text-[9px] font-bold text-slate-500 uppercase">Bottleneck</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-8 h-px bg-red-400 border-t border-dashed border-red-400" />
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Takt Time</span>
+                </div>
+              </div>
+            )}
           </div>
+
           <div className="flex-1 min-h-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
-                  interval={0}
-                />
-                <YAxis 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
-                />
-                <Tooltip 
-                  cursor={{ fill: '#f8fafc' }}
-                  contentStyle={{ 
-                    borderRadius: '12px', 
-                    border: 'none', 
-                    boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-                    fontSize: '12px',
-                    fontWeight: 'bold'
-                  }}
-                />
-                <ReferenceLine 
-                  y={metrics.adjustedTakt} 
-                  stroke="#f87171" 
-                  strokeDasharray="4 4" 
-                  strokeWidth={2}
-                />
-                <Bar dataKey="load" radius={[4, 4, 0, 0]} barSize={40}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.isBottleneck ? '#f97316' : '#3b82f6'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {activeTab === 'balance' ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="name" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
+                    interval={0}
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
+                  />
+                  <Tooltip 
+                    cursor={{ fill: '#f8fafc' }}
+                    contentStyle={{ 
+                      borderRadius: '12px', 
+                      border: 'none', 
+                      boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                      fontSize: '12px',
+                      fontWeight: 'bold'
+                    }}
+                  />
+                  <ReferenceLine 
+                    y={metrics.adjustedTakt} 
+                    stroke="#f87171" 
+                    strokeDasharray="4 4" 
+                    strokeWidth={2}
+                  />
+                  <Bar dataKey="load" radius={[4, 4, 0, 0]} barSize={40}>
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.isBottleneck ? '#f97316' : '#3b82f6'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={histogramData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="range" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
+                  />
+                  <Tooltip 
+                    cursor={{ fill: '#f8fafc' }}
+                    contentStyle={{ 
+                      borderRadius: '12px', 
+                      border: 'none', 
+                      boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                      fontSize: '12px',
+                      fontWeight: 'bold'
+                    }}
+                  />
+                  <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={60} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -184,18 +259,16 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Workforce</h3>
             <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">Total Workers</span>
-                <span className="text-sm font-mono font-bold text-blue-600">{metrics.totalWorkers}</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Total FTE</span>
+                <span className="text-sm font-mono font-bold text-blue-600">{metrics.totalFTE}</span>
               </div>
               <div className="space-y-1">
                 {stations.filter(s => s.type !== 'inventory').map(s => {
-                  const workers = (s.isAutoBalanced || settings.autoBalanceAll)
-                    ? (metrics.finalWorkers?.[s.id] || 1)
-                    : s.workers;
+                  const fte = s.type === 'machine' ? '-' : s.fte;
                   return (
                     <div key={s.id} className="flex justify-between items-center text-[10px]">
                       <span className="text-slate-600 truncate">{s.name}</span>
-                      <span className="font-mono font-bold text-slate-700">{workers}</span>
+                      <span className="font-mono font-bold text-slate-700">{fte}</span>
                     </div>
                   );
                 })}

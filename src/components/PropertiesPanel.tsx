@@ -91,8 +91,133 @@ export function PropertiesPanel({
                         className="w-full bg-transparent text-slate-700 font-bold text-lg outline-none focus:text-blue-600 transition-colors"
                       />
                     </div>
+                    
+                    {isInventory && (
+                      <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <Box size={16} className="text-blue-600" />
+                          <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Kanban Source</label>
+                        </div>
+                        <button 
+                          onClick={() => updateStation(selectedId, { isKanbanSource: !s.isKanbanSource })}
+                          className={cn(
+                            "w-10 h-5 rounded-full transition-all relative",
+                            s.isKanbanSource ? "bg-blue-600" : "bg-slate-200"
+                          )}
+                        >
+                          <div className={cn(
+                            "absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all",
+                            s.isKanbanSource ? "left-5.5" : "left-0.5"
+                          )} />
+                        </button>
+                      </div>
+                    )}
 
-                    {!isInventory ? (
+                    {s.type === 'machine' ? (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cycle Time (min)</label>
+                            <input 
+                              type="number" 
+                              step="any"
+                              value={s.cycleTime || ''}
+                              onChange={e => {
+                                const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                updateStation(selectedId, { cycleTime: val });
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1">
+                              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Input Buffer</label>
+                              <InfoTooltip content="Maximum number of units this station can hold in its queue before blocking upstream." />
+                            </div>
+                            <input 
+                              type="number" 
+                              step="any"
+                              value={s.capacity || ''}
+                              placeholder="10"
+                              onChange={e => {
+                                const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                updateStation(selectedId, { capacity: val });
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Batch Size</label>
+                          <input 
+                            type="number" 
+                            step="any"
+                            value={s.batchSize || ''}
+                            onChange={e => {
+                              const val = e.target.value === '' ? 1 : Number(e.target.value);
+                              updateStation(selectedId, { batchSize: val });
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                          />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">C/O (min)</label>
+                            <input 
+                              type="number" 
+                              step="any"
+                              value={s.changeoverTime || ''}
+                              onChange={e => {
+                                const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                updateStation(selectedId, { changeoverTime: val });
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">MTBF (min)</label>
+                              <input 
+                                type="number" 
+                                step="any"
+                                value={s.mtbf ?? ''}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                  updateStation(selectedId, { mtbf: val });
+                                }}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">MTTR (min)</label>
+                              <input 
+                                type="number" 
+                                step="any"
+                                value={s.mttr ?? ''}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                  updateStation(selectedId, { mttr: val });
+                                }}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-100">
+                          <div className="flex justify-between items-center mb-1">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Effective CT</span>
+                              <InfoTooltip content="Cycle Time divided by Batch Size." />
+                            </div>
+                            <span className="text-sm font-mono font-bold text-slate-700">
+                              {(s.cycleTime / (s.batchSize || 1)).toFixed(2)}m
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : !isInventory ? (
                       <div className="space-y-4">
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
@@ -123,57 +248,92 @@ export function PropertiesPanel({
                           </div>
                         </div>
 
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
                             <div className="flex items-center gap-1">
-                              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Auto-Balance Workers</label>
-                              <InfoTooltip content="Automatically adjust workers to meet the Takt time based on this station's flow volume." position="bottom" />
+                              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cycle Time (min)</label>
+                              <InfoTooltip content="Time required to complete one unit of work at this station." />
                             </div>
-                            <button 
-                              disabled={settings.autoBalanceAll}
-                              onClick={() => updateStation(selectedId, { isAutoBalanced: !s.isAutoBalanced })}
-                              className={cn(
-                                "w-12 h-6 rounded-full transition-all relative",
-                                (s.isAutoBalanced || settings.autoBalanceAll) ? "bg-blue-600" : "bg-slate-200",
-                                settings.autoBalanceAll && "opacity-50 cursor-not-allowed"
-                              )}
-                            >
-                              <div className={cn(
-                                "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                                (s.isAutoBalanced || settings.autoBalanceAll) ? "left-7" : "left-1"
-                              )} />
-                            </button>
+                            <input 
+                              type="number" 
+                              step="any"
+                              value={s.cycleTime || ''}
+                              onChange={e => {
+                                const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                updateStation(selectedId, { cycleTime: val });
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            />
                           </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cycle Time (min)</label>
-                          <input 
-                            type="number" 
-                            value={s.cycleTime}
-                            onChange={e => updateStation(selectedId, { cycleTime: Number(e.target.value) })}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                          />
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1">
+                              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Input Buffer</label>
+                              <InfoTooltip content="Maximum number of units this station can hold in its queue before blocking upstream." />
+                            </div>
+                            <input 
+                              type="number" 
+                              step="any"
+                              value={s.capacity || ''}
+                              placeholder="10"
+                              onChange={e => {
+                                const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                updateStation(selectedId, { capacity: val });
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            />
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">C/O (min)</label>
+                            <div className="flex items-center gap-1">
+                              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">C/O (min)</label>
+                              <InfoTooltip content="Changeover Time: Time required to switch between different product types." />
+                            </div>
                             <input 
                               type="number" 
-                              value={s.changeoverTime || 0}
-                              onChange={e => updateStation(selectedId, { changeoverTime: Number(e.target.value) })}
+                              step="any"
+                              value={s.changeoverTime || ''}
+                              onChange={e => {
+                                const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                updateStation(selectedId, { changeoverTime: val });
+                              }}
                               className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                             />
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Uptime (%)</label>
-                            <input 
-                              type="number" 
-                              value={s.uptime || 100}
-                              onChange={e => updateStation(selectedId, { uptime: Number(e.target.value) })}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                            />
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-1">
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">MTBF (min)</label>
+                                <InfoTooltip content="Mean Time Between Failures: Average time between station breakdowns." />
+                              </div>
+                              <input 
+                                type="number" 
+                                step="any"
+                                value={s.mtbf ?? ''}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                  updateStation(selectedId, { mtbf: val });
+                                }}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-1">
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">MTTR (min)</label>
+                                <InfoTooltip content="Mean Time To Repair: Average time to fix a station breakdown." />
+                              </div>
+                              <input 
+                                type="number" 
+                                step="any"
+                                value={s.mttr ?? ''}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                  updateStation(selectedId, { mttr: val });
+                                }}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                              />
+                            </div>
                           </div>
                         </div>
 
@@ -182,8 +342,12 @@ export function PropertiesPanel({
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Quality (%)</label>
                             <input 
                               type="number" 
-                              value={s.qualityRate || 100}
-                              onChange={e => updateStation(selectedId, { qualityRate: Number(e.target.value) })}
+                              step="any"
+                              value={s.qualityRate ?? 100}
+                              onChange={e => {
+                                const val = e.target.value === '' ? 100 : Number(e.target.value);
+                                updateStation(selectedId, { qualityRate: val });
+                              }}
                               className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                             />
                           </div>
@@ -191,8 +355,12 @@ export function PropertiesPanel({
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Batch Size</label>
                             <input 
                               type="number" 
-                              value={s.batchSize || 1}
-                              onChange={e => updateStation(selectedId, { batchSize: Number(e.target.value) })}
+                              step="any"
+                              value={s.batchSize || ''}
+                              onChange={e => {
+                                const val = e.target.value === '' ? 1 : Number(e.target.value);
+                                updateStation(selectedId, { batchSize: val });
+                              }}
                               className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                             />
                           </div>
@@ -200,28 +368,21 @@ export function PropertiesPanel({
 
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-1">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Workers</label>
-                            <InfoTooltip content="Number of people working in parallel at this station. More workers reduce the effective cycle time." />
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">FTE</label>
+                            <InfoTooltip content="Full-Time Equivalent (FTE) for this station. More FTE reduces the effective cycle time." />
                           </div>
                           <div className="flex items-center gap-2">
                             <button 
-                              disabled={s.isAutoBalanced || settings.autoBalanceAll || settings.useConstrainedBalance}
-                              onClick={() => updateStation(selectedId, { workers: Math.max(1, s.workers - 1) })}
+                              onClick={() => updateStation(selectedId, { fte: Math.max(0.1, s.fte - 0.1) })}
                               className="w-10 h-10 flex items-center justify-center bg-slate-100 hover:bg-slate-200 disabled:opacity-50 rounded-lg text-slate-600 transition-colors"
                             >
                               -
                             </button>
-                            <div className={cn(
-                              "flex-1 text-center font-bold text-lg bg-slate-50 py-1.5 rounded-lg border border-slate-200",
-                              (s.isAutoBalanced || settings.autoBalanceAll || settings.useConstrainedBalance) && "text-blue-600 border-blue-100 bg-blue-50"
-                            )}>
-                              {(s.isAutoBalanced || settings.autoBalanceAll || settings.useConstrainedBalance)
-                                ? (metrics.finalWorkers?.[selectedId] || 0)
-                                : s.workers}
+                            <div className="flex-1 text-center font-bold text-lg bg-slate-50 py-1.5 rounded-lg border border-slate-200">
+                              {s.fte.toFixed(1)}
                             </div>
                             <button 
-                              disabled={s.isAutoBalanced || settings.autoBalanceAll || settings.useConstrainedBalance}
-                              onClick={() => updateStation(selectedId, { workers: s.workers + 1 })}
+                              onClick={() => updateStation(selectedId, { fte: s.fte + 0.1 })}
                               className="w-10 h-10 flex items-center justify-center bg-slate-100 hover:bg-slate-200 disabled:opacity-50 rounded-lg text-slate-600 transition-colors"
                             >
                               +
@@ -231,30 +392,57 @@ export function PropertiesPanel({
 
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-1">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Max Workers Allowed</label>
-                            <InfoTooltip content="Physical limit of how many people can work at this station simultaneously (e.g., due to space or equipment)." />
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Max FTE Allowed</label>
+                            <InfoTooltip content="Physical limit of how much FTE can work at this station simultaneously (e.g., due to space or equipment)." />
                           </div>
                           <input 
                             type="number" 
-                            value={s.maxWorkersAllowed || ''}
+                            value={s.maxFteAllowed || ''}
                             placeholder="No limit"
-                            onChange={e => updateStation(selectedId, { maxWorkersAllowed: Number(e.target.value) || undefined })}
+                            onChange={e => updateStation(selectedId, { maxFteAllowed: Number(e.target.value) || undefined })}
                             className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                           />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1">
+                              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Min FTE</label>
+                              <InfoTooltip content="Minimum FTE required to operate this station safely or effectively." />
+                            </div>
+                            <input 
+                              type="number" 
+                              value={s.minFteRequired || ''}
+                              placeholder="1"
+                              onChange={e => updateStation(selectedId, { minFteRequired: Number(e.target.value) || undefined })}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1">
+                              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trained FTE</label>
+                              <InfoTooltip content="Maximum number of trained FTE available for this specific station." />
+                            </div>
+                            <input 
+                              type="number" 
+                              value={s.trainedFteAvailable || ''}
+                              placeholder="No limit"
+                              onChange={e => updateStation(selectedId, { trainedFteAvailable: Number(e.target.value) || undefined })}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            />
+                          </div>
                         </div>
 
                         <div className="pt-4 border-t border-slate-100">
                           <div className="flex justify-between items-center mb-1">
                             <div className="flex items-center gap-1">
                               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Effective CT</span>
-                              <InfoTooltip content="The time it takes for one unit to pass through this station given the number of parallel workers (Cycle Time / Workers)." />
+                              <InfoTooltip content="The time it takes for one unit to pass through this station given the number of parallel FTE (Cycle Time / FTE)." />
                             </div>
                             <span className="text-sm font-mono font-bold text-slate-700">
                               {(() => {
-                                const workers = (s.isAutoBalanced || settings.autoBalanceAll || settings.useConstrainedBalance)
-                                  ? (metrics.finalWorkers?.[selectedId] || 1)
-                                  : s.workers;
-                                return (s.cycleTime / workers).toFixed(2);
+                                const fte = s.fte;
+                                return (s.cycleTime / fte).toFixed(2);
                               })()}m
                             </span>
                           </div>
@@ -266,8 +454,12 @@ export function PropertiesPanel({
                           <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Capacity (units)</label>
                           <input 
                             type="number" 
-                            value={s.capacity}
-                            onChange={e => updateStation(selectedId, { capacity: Number(e.target.value) })}
+                            step="any"
+                            value={s.capacity || ''}
+                            onChange={e => {
+                              const val = e.target.value === '' ? 0 : Number(e.target.value);
+                              updateStation(selectedId, { capacity: val });
+                            }}
                             className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                           />
                         </div>
@@ -276,20 +468,19 @@ export function PropertiesPanel({
                           <div className="flex items-center gap-2">
                             <input 
                               type="number" 
-                              disabled={settings.autoBalanceAll}
-                              value={settings.autoBalanceAll ? (metrics.idealInventories?.[selectedId] || 0) : s.targetInventory}
-                              onChange={e => updateStation(selectedId, { targetInventory: Number(e.target.value) })}
+                              step="any"
+                              value={s.targetInventory || ''}
+                              onChange={e => {
+                                const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                updateStation(selectedId, { targetInventory: val });
+                              }}
                               className={cn(
                                 "flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all",
-                                settings.autoBalanceAll && "text-blue-600 bg-blue-50 border-blue-100",
-                                !settings.autoBalanceAll && (s.targetInventory || 0) > (s.capacity || 0) && "border-red-300 bg-red-50 text-red-700"
+                                (s.targetInventory || 0) > (s.capacity || 0) && "border-red-300 bg-red-50 text-red-700"
                               )}
                             />
-                            {settings.autoBalanceAll && (
-                              <div className="text-[10px] font-bold text-blue-500 uppercase tracking-tighter">Ideal</div>
-                            )}
                           </div>
-                          {!settings.autoBalanceAll && (s.targetInventory || 0) > (s.capacity || 0) && (
+                          {(s.targetInventory || 0) > (s.capacity || 0) && (
                             <div className="flex items-center gap-1 text-[10px] font-bold text-red-600 mt-1">
                               <AlertCircle size={10} />
                               <span>Target exceeds capacity!</span>
@@ -305,15 +496,13 @@ export function PropertiesPanel({
                             <span className="text-sm font-mono font-bold text-slate-700">
                               {(() => {
                                 const flowFactor = metrics.flowFactors?.[selectedId] || 0;
-                                const inventory = settings.autoBalanceAll ? (metrics.idealInventories?.[selectedId] || 0) : (s.targetInventory || 0);
+                                const inventory = s.targetInventory || 0;
                                 
                                 const maxStationLoad = stations.reduce((max, st) => {
                                   if (st.type === 'inventory') return max;
                                   const ff = metrics.flowFactors?.[st.id] || 0;
-                                  const workers = (st.isAutoBalanced || settings.autoBalanceAll || settings.useConstrainedBalance)
-                                    ? (metrics.finalWorkers?.[st.id] || 1)
-                                    : st.workers;
-                                  const load = (st.cycleTime / workers) * ff;
+                                  const fte = st.fte;
+                                  const load = (st.cycleTime / fte) * ff;
                                   return Math.max(max, load);
                                 }, 0);
                                 const systemTaktActual = Math.max(metrics.adjustedTakt, maxStationLoad);
@@ -401,6 +590,20 @@ export function PropertiesPanel({
                         </div>
                       </div>
 
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1">
+                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Input Group (Optional)</label>
+                          <InfoTooltip content="For assembly stations, connections with the same group act as alternatives (OR logic)." />
+                        </div>
+                        <input 
+                          type="text" 
+                          placeholder="e.g., Engine"
+                          value={conn.inputGroup || ''}
+                          onChange={e => updateConnection(selectedConnId, { inputGroup: e.target.value })}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                        />
+                      </div>
+
                       {conn.waypoints && conn.waypoints.length > 0 && (
                         <div className="pt-2">
                           <button 
@@ -433,11 +636,8 @@ export function PropertiesPanel({
                                 {(() => {
                                   if (!target) return '0.0';
                                   const flowFactor = metrics.flowFactors?.[target.id] || 0;
-                                  const isAutoBalanced = target.isAutoBalanced || settings.autoBalanceAll;
-                                  const workers = isAutoBalanced 
-                                    ? Math.max(1, Math.ceil((target.cycleTime * flowFactor) / metrics.adjustedTakt))
-                                    : target.workers;
-                                  return (target.cycleTime / workers * flowFactor).toFixed(1);
+                                  const fte = target.fte;
+                                  return (target.cycleTime / fte * flowFactor).toFixed(1);
                                 })()}m
                               </p>
                             </div>
@@ -450,11 +650,8 @@ export function PropertiesPanel({
                           {(() => {
                             if (!target) return null;
                             const flowFactor = metrics.flowFactors?.[target.id] || 0;
-                            const isAutoBalanced = target.isAutoBalanced || settings.autoBalanceAll;
-                            const workers = isAutoBalanced 
-                              ? Math.max(1, Math.ceil((target.cycleTime * flowFactor) / metrics.adjustedTakt))
-                              : target.workers;
-                            const load = (target.cycleTime / workers * flowFactor);
+                            const fte = target.fte;
+                            const load = (target.cycleTime / fte * flowFactor);
                             if (load > metrics.adjustedTakt) {
                               return (
                                 <div className="flex items-center gap-1 text-red-700 bg-red-100/50 p-2 rounded text-[10px] font-bold border border-red-200">

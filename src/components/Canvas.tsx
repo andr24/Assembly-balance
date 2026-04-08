@@ -1,8 +1,11 @@
 import React, { useRef, useState } from 'react';
-import { MousePointer2, Link2, Plus, Trash2, RefreshCw, AlertCircle, Box } from 'lucide-react';
+import { MousePointer2, Link2, Plus, Trash2, RefreshCw, AlertCircle, Box, User, Cpu, Package } from 'lucide-react';
 import { Station, Connection, Metrics, GlobalSettings } from '../types';
 import { STATION_WIDTH, STATION_HEIGHT, INVENTORY_WIDTH, INVENTORY_HEIGHT } from '../constants';
 import { cn } from '../lib/utils';
+import { MiniMap } from './MiniMap';
+import { autoLayout } from '../utils/layout';
+import { TooltipWrapper } from './TooltipWrapper';
 
 interface CanvasProps {
   stations: Station[];
@@ -17,7 +20,7 @@ interface CanvasProps {
   setIsConnecting: (b: boolean) => void;
   connectSourceId: string | null;
   setConnectSourceId: (id: string | null) => void;
-  onAddStation: (type: 'station' | 'inventory') => void;
+  onAddStation: (type: 'station' | 'inventory' | 'machine') => void;
   onAddConnection: (sourceId: string, targetId: string) => void;
   onDelete: () => void;
   duplicateStation: (station: Station) => string;
@@ -273,20 +276,46 @@ export function Canvas({
         </div>
         <div className="w-px h-8 bg-slate-300 mx-1" />
         <div className="flex bg-white p-1 rounded-xl shadow-xl border border-slate-200">
-          <button 
-            onClick={() => onAddStation('station')}
-            className="flex items-center gap-2 text-slate-600 hover:bg-slate-50 px-3 py-2 rounded-lg font-medium transition-all"
-          >
-            <Plus size={18} />
-            <span className="text-xs font-bold uppercase tracking-wider">Station</span>
-          </button>
-          <button 
-            onClick={() => onAddStation('inventory')}
-            className="flex items-center gap-2 text-slate-600 hover:bg-slate-50 px-3 py-2 rounded-lg font-medium transition-all"
-          >
-            <Box size={18} />
-            <span className="text-xs font-bold uppercase tracking-wider">Inventory</span>
-          </button>
+          <TooltipWrapper content="Automatically arrange stations in a clean layout">
+            <button 
+              onClick={() => {
+                const newStations = autoLayout(stations, connections);
+                newStations.forEach(s => updateStation(s.id, { x: s.x, y: s.y }));
+              }}
+              className="flex items-center gap-2 text-slate-600 hover:bg-slate-50 px-3 py-2 rounded-lg font-medium transition-all"
+            >
+              <RefreshCw size={18} />
+              <span className="text-xs font-bold uppercase tracking-wider">Auto-Layout</span>
+            </button>
+          </TooltipWrapper>
+          <div className="w-px h-8 bg-slate-300 mx-1" />
+          <TooltipWrapper content="Add a new station">
+            <button 
+              onClick={() => onAddStation('station')}
+              className="flex items-center gap-2 text-slate-600 hover:bg-slate-50 px-3 py-2 rounded-lg font-medium transition-all"
+            >
+              <Plus size={18} />
+              <span className="text-xs font-bold uppercase tracking-wider">Station</span>
+            </button>
+          </TooltipWrapper>
+          <TooltipWrapper content="Add a new machine">
+            <button 
+              onClick={() => onAddStation('machine')}
+              className="flex items-center gap-2 text-slate-600 hover:bg-slate-50 px-3 py-2 rounded-lg font-medium transition-all"
+            >
+              <Plus size={18} />
+              <span className="text-xs font-bold uppercase tracking-wider">Machine</span>
+            </button>
+          </TooltipWrapper>
+          <TooltipWrapper content="Add a new inventory">
+            <button 
+              onClick={() => onAddStation('inventory')}
+              className="flex items-center gap-2 text-slate-600 hover:bg-slate-50 px-3 py-2 rounded-lg font-medium transition-all"
+            >
+              <Box size={18} />
+              <span className="text-xs font-bold uppercase tracking-wider">Inventory</span>
+            </button>
+          </TooltipWrapper>
         </div>
         <button 
           onClick={onDelete}
@@ -359,6 +388,16 @@ export function Canvas({
           </button>
         </div>
       </div>
+
+      <MiniMap 
+        stations={stations} 
+        connections={connections} 
+        pan={pan} 
+        zoom={zoom} 
+        containerWidth={containerRef.current?.clientWidth || 0} 
+        containerHeight={containerRef.current?.clientHeight || 0}
+        onPan={(x, y) => setPan({ x, y })}
+      />
 
       <div 
         ref={containerRef}
@@ -549,6 +588,16 @@ export function Canvas({
                     <text textAnchor="middle" dy=".3em" className="text-[9px] font-bold fill-blue-600">{conn.splitPercent}%</text>
                   </g>
                 )}
+
+                {/* Input Group Badge */}
+                {conn.inputGroup && !conn.isRework && (
+                  <g transform={`translate(${startX + dx * 0.7}, ${startY + dy * 0.7})`} className="pointer-events-none">
+                    <rect x="-20" y="-8" width="40" height="16" rx="8" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="1" />
+                    <text textAnchor="middle" dy=".3em" className="text-[8px] font-bold fill-slate-600">
+                      {conn.inputGroup}
+                    </text>
+                  </g>
+                )}
                 {conn.isRework && (
                   <g transform={`translate(${markerX}, ${markerY})`} className="pointer-events-none">
                     <rect x="-20" y="-8" width="40" height="16" rx="4" fill="#fee2e2" />
@@ -618,6 +667,7 @@ export function Canvas({
             const isBottleneck = s.id === metrics.bottleneckStationId;
             const isCritical = metrics.criticalPathStationIds.includes(s.id);
             const isInventory = s.type === 'inventory';
+            const isMachine = s.type === 'machine';
             const width = isInventory ? INVENTORY_WIDTH : STATION_WIDTH;
             const height = isInventory ? INVENTORY_HEIGHT : STATION_HEIGHT;
 
@@ -637,20 +687,51 @@ export function Canvas({
                     strokeWidth={isSelected || isCritical ? 3 : 2}
                     className="shadow-sm transition-all"
                   />
+                ) : isMachine ? (
+                  <rect 
+                    width={width} 
+                    height={height} 
+                    rx="4"
+                    fill={isBottleneck ? "#fff7ed" : "white"}
+                    stroke={isSelected ? "#9333ea" : (isCritical ? "#f59e0b" : (isBottleneck ? "#f97316" : "#d8b4fe"))}
+                    strokeWidth={isSelected || isCritical || isBottleneck ? 4 : 2}
+                    className="shadow-sm transition-all"
+                  />
                 ) : (
                   <rect 
                     width={width} 
                     height={height} 
                     rx="8"
-                    fill="white"
+                    fill={isBottleneck ? "#fff7ed" : "white"}
                     stroke={isSelected ? "#2563eb" : (isCritical ? "#f59e0b" : (isBottleneck ? "#f97316" : "#cbd5e1"))}
-                    strokeWidth={isSelected || isCritical ? 3 : 2}
+                    strokeWidth={isSelected || isCritical || isBottleneck ? 4 : 2}
                     className="shadow-sm transition-all"
                   />
                 )}
                 
                 {isBottleneck && !isInventory && (
-                  <rect width={width} height="4" rx="2" fill="#f97316" className="animate-pulse" />
+                  <g>
+                    <rect 
+                      x="-4" y="-4" 
+                      width={width + 8} 
+                      height={height + 8} 
+                      rx={isMachine ? 8 : 12} 
+                      fill="none" 
+                      stroke="#f97316" 
+                      strokeWidth="2" 
+                      strokeOpacity="0.4"
+                      className="animate-pulse" 
+                    />
+                    <rect width={width} height="6" rx="3" fill="#f97316" />
+                    <text 
+                      x={width / 2} 
+                      y="-10" 
+                      textAnchor="middle" 
+                      className="text-[10px] font-black fill-orange-600 uppercase tracking-widest"
+                    >
+                      Bottleneck
+                    </text>
+                  </g>
                 )}
 
                 {s.flowMode === 'assembly' && !isInventory && (
@@ -671,6 +752,19 @@ export function Canvas({
 
                 <text x={isInventory ? width/2 : 12} y={isInventory ? height + 15 : 24} textAnchor={isInventory ? "middle" : "start"} className="text-sm font-bold fill-slate-900">{s.name}</text>
                 
+                {/* Type Icon */}
+                <g transform={`translate(${isInventory ? width/2 - 10 : width - 28}, ${isInventory ? 6 : 10})`} className="opacity-30 pointer-events-none fill-slate-400">
+                  {isInventory ? <Package size={20} /> : (isMachine ? <Cpu size={20} /> : <User size={20} />)}
+                </g>
+
+                {s.isKanbanSource && (
+                  <g transform={`translate(${isInventory ? width/2 : 12}, ${isInventory ? height - 10 : height - 12})`}>
+                    <circle r="8" fill="#3b82f6" />
+                    <text textAnchor="middle" dy=".3em" className="text-[10px] font-bold fill-white">K</text>
+                    <title>Kanban Source: Infinite material supply.</title>
+                  </g>
+                )}
+
                 {/* Start/Finish Badges */}
                 {(() => {
                   const isStart = !connections.some(c => c.targetId === s.id && !c.isRework);
@@ -705,14 +799,15 @@ export function Canvas({
                   <g transform={`translate(0, ${height + 25})`}>
                     {(() => {
                       const flowFactor = metrics.flowFactors?.[s.id] || 0;
-                      const inventory = settings.autoBalanceAll ? (metrics.idealInventories?.[s.id] || 0) : (s.targetInventory || 0);
+                      const inventory = s.targetInventory || 0;
                       const maxStationLoad = stations.reduce((max, st) => {
                         if (st.type === 'inventory') return max;
                         const ff = metrics.flowFactors?.[st.id] || 0;
-                        const workers = (st.isAutoBalanced || settings.autoBalanceAll || settings.useConstrainedBalance)
-                          ? (metrics.finalWorkers?.[st.id] || 1)
-                          : st.workers;
-                        const load = (st.cycleTime / workers) * ff;
+                        const fte = st.fte || 1;
+                        const effectiveCT = st.type === 'machine' 
+                          ? st.cycleTime / (st.batchSize || 1)
+                          : st.cycleTime / fte;
+                        const load = effectiveCT * ff;
                         return Math.max(max, load);
                       }, 0);
                       const systemTaktActual = Math.max(metrics.adjustedTakt, maxStationLoad);
@@ -746,16 +841,12 @@ export function Canvas({
                       {s.cycleTime}m
                     </text>
                     
-                    <text x={width/2 + 6} y="14" className="text-[8px] font-bold fill-slate-400 uppercase">W</text>
+                    <text x={width/2 + 6} y="14" className="text-[8px] font-bold fill-slate-400 uppercase">{isMachine ? 'Cap' : 'FTE'}</text>
                     <text x={width - 6} y="14" textAnchor="end" className="text-[10px] font-mono font-bold fill-slate-700">
                       <title>
-                        {(s.isAutoBalanced || settings.autoBalanceAll) 
-                          ? `Auto-Balanced: ceil((Cycle Time: ${s.cycleTime} * Flow Factor: ${(metrics.flowFactors?.[s.id] || 0).toFixed(2)}) / Takt: ${metrics.adjustedTakt.toFixed(2)})`
-                          : settings.useConstrainedBalance 
-                            ? "Constrained Distribution from Pool"
-                            : "Manual Assignment"}
+                        {isMachine ? 'Batch Size / Capacity' : 'Manual Assignment'}
                       </title>
-                      {((s.isAutoBalanced || settings.autoBalanceAll || settings.useConstrainedBalance) ? (metrics.finalWorkers?.[s.id] || 0) : s.workers)}
+                      {isMachine ? (s.batchSize || 1) : s.fte}
                     </text>
 
                     {/* Row 2 */}
@@ -765,10 +856,15 @@ export function Canvas({
                       {s.changeoverTime || 0}m
                     </text>
                     
-                    <text x={width/2 + 6} y="34" className="text-[8px] font-bold fill-slate-400 uppercase">Up</text>
+                    <text x={width/2 + 6} y="34" className="text-[8px] font-bold fill-slate-400 uppercase">MTBF</text>
                     <text x={width - 6} y="34" textAnchor="end" className="text-[10px] font-mono font-bold fill-slate-700">
-                      <title>Uptime: The percentage of time the station is actually available for production.</title>
-                      {s.uptime || 100}%
+                      <title>MTBF: Mean Time Between Failures.</title>
+                      {s.mtbf || 0}m
+                    </text>
+                    <text x="6" y="44" className="text-[8px] font-bold fill-slate-400 uppercase">MTTR</text>
+                    <text x={width/2 - 6} y="44" textAnchor="end" className="text-[10px] font-mono font-bold fill-slate-700">
+                      <title>MTTR: Mean Time To Repair.</title>
+                      {s.mttr || 0}m
                     </text>
 
                     {/* Row 3 */}
@@ -790,10 +886,10 @@ export function Canvas({
                   <>
                     <text x="12" y="44" className="text-[10px] uppercase tracking-wider font-semibold fill-slate-400">Load / Flow</text>
                     <text x="12" y="62" className="text-lg font-mono font-bold fill-slate-700">
-                      {((s.cycleTime / ((s.isAutoBalanced || settings.autoBalanceAll) ? Math.max(1, Math.ceil((s.cycleTime * (metrics.flowFactors?.[s.id] || 0)) / metrics.adjustedTakt)) : s.workers)) * (metrics.flowFactors?.[s.id] || 0)).toFixed(1)}m
+                      {((s.cycleTime / (isMachine ? (s.batchSize || 1) : s.fte)) * (metrics.flowFactors?.[s.id] || 0)).toFixed(1)}m
                     </text>
                     <text x="12" y="72" className="text-[9px] font-mono fill-slate-400">
-                      {((metrics.flowFactors?.[s.id] || 0) * 100).toFixed(0)}% flow {(s.isAutoBalanced || settings.autoBalanceAll) && "• Auto"}
+                      {((metrics.flowFactors?.[s.id] || 0) * 100).toFixed(0)}% flow
                     </text>
                   </>
                 ) : (
@@ -837,6 +933,141 @@ export function Canvas({
           
         </svg>
       </div>
+
+      {/* VSM Timelines at the bottom */}
+      {settings.showVsmInfo && metrics.criticalPathStationIds.length > 0 && (
+        <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-slate-200 p-4 z-10 pointer-events-none shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <div className="pointer-events-auto overflow-x-auto pb-2">
+            
+            {/* Critical Path Flow */}
+            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Critical Path Flow</h3>
+            <div className="flex items-center gap-0 mb-6 min-w-max px-2">
+              {metrics.criticalPathStationIds.map((id, index) => {
+                const station = stations.find(s => s.id === id);
+                if (!station) return null;
+                const isInv = station.type === 'inventory';
+                
+                return (
+                  <React.Fragment key={`cp-${id}`}>
+                    <div className={`flex flex-col items-center justify-center min-w-[80px] h-12 px-3 rounded-lg border-2 ${
+                      isInv 
+                        ? 'bg-orange-50 border-orange-200 text-orange-700' 
+                        : 'bg-blue-50 border-blue-200 text-blue-700'
+                    }`}>
+                      <span className="text-[10px] font-bold text-center leading-tight">{station.name}</span>
+                      <span className="text-[9px] font-mono opacity-75 mt-0.5">
+                        {isInv ? 'Wait' : 'Process'}
+                      </span>
+                    </div>
+                    {index < metrics.criticalPathStationIds.length - 1 && (
+                      <div className="w-8 h-0.5 bg-slate-300 relative">
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 border-t-2 border-r-2 border-slate-300 rotate-45" />
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+
+            {/* VSM Lead Time Timeline (Saw) */}
+            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Value Stream Timeline</h3>
+            <div className="min-w-max px-2">
+              <svg width={metrics.criticalPathStationIds.length * 120 + 200} height="100" className="overflow-visible">
+                {(() => {
+                  const cpStations = metrics.criticalPathStationIds.map(id => stations.find(s => s.id === id)!);
+                  let currentX = 0;
+                  const stepWidth = 120;
+                  const points: string[] = [];
+                  let currentY = 0;
+                  
+                  let totalVA = 0;
+                  let totalNVA = 0;
+                  
+                  cpStations.forEach((s, i) => {
+                    const isInv = s.type === 'inventory';
+                    const flowFactor = metrics.flowFactors?.[s.id] || 0;
+                    const systemTaktActual = metrics.systemTakt;
+                    
+                    const time = isInv 
+                      ? (flowFactor > 0 ? (s.targetInventory || 0) * systemTaktActual / flowFactor : 0)
+                      : (s.type === 'machine' ? s.cycleTime / (s.batchSize || 1) : s.cycleTime / (s.fte || 1));
+
+                    if (isInv) totalNVA += time;
+                    else totalVA += time;
+
+                    const targetY = isInv ? 20 : 70;
+                    
+                    if (i === 0) {
+                      points.push(`M 0 ${targetY}`);
+                      currentY = targetY;
+                    } else if (currentY !== targetY) {
+                      points.push(`L ${currentX} ${targetY}`);
+                      currentY = targetY;
+                    }
+                    
+                    points.push(`L ${currentX + stepWidth} ${targetY}`);
+                    currentX += stepWidth;
+                  });
+
+                  // Format time helper
+                  const formatTime = (mins: number) => {
+                    if (mins >= 60 * 24) return `${(mins / (60 * 24)).toFixed(1)}d`;
+                    if (mins >= 60) return `${(mins / 60).toFixed(1)}h`;
+                    return `${mins.toFixed(1)}m`;
+                  };
+
+                  return (
+                    <g>
+                      {/* Grid lines */}
+                      <line x1="0" y1="20" x2={currentX} y2="20" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="4 4" />
+                      <line x1="0" y1="70" x2={currentX} y2="70" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="4 4" />
+                      
+                      {/* The Saw Line */}
+                      <path d={points.join(' ')} fill="none" stroke="#64748b" strokeWidth="2" />
+                      
+                      {/* Labels */}
+                      {cpStations.map((s, i) => {
+                        const isInv = s.type === 'inventory';
+                        const flowFactor = metrics.flowFactors?.[s.id] || 0;
+                        const systemTaktActual = metrics.systemTakt;
+                        
+                        const time = isInv 
+                          ? (flowFactor > 0 ? (s.targetInventory || 0) * systemTaktActual / flowFactor : 0)
+                          : (s.type === 'machine' ? s.cycleTime / (s.batchSize || 1) : s.cycleTime / (s.fte || 1));
+                        
+                        const xCenter = i * stepWidth + (stepWidth / 2);
+
+                        return (
+                          <g key={`vsm-label-${s.id}`}>
+                            <text x={xCenter} y={isInv ? 12 : 88} textAnchor="middle" className={`text-[11px] font-mono font-bold ${isInv ? 'fill-orange-600' : 'fill-blue-600'}`}>
+                              {formatTime(time)}
+                            </text>
+                            <text x={xCenter} y={isInv ? 32 : 58} textAnchor="middle" className="text-[9px] font-bold fill-slate-400 uppercase tracking-tighter">
+                              {s.name}
+                            </text>
+                          </g>
+                        );
+                      })}
+
+                      {/* Summary Box at the end */}
+                      <g transform={`translate(${currentX + 20}, 10)`}>
+                        <rect width="140" height="70" rx="6" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="1" />
+                        <text x="70" y="20" textAnchor="middle" className="text-[9px] font-bold text-slate-500 uppercase tracking-wider fill-slate-500">Total Lead Time</text>
+                        <text x="70" y="36" textAnchor="middle" className="text-[14px] font-mono font-bold fill-slate-800">{formatTime(totalNVA + totalVA)}</text>
+                        
+                        <line x1="10" y1="44" x2="130" y2="44" stroke="#e2e8f0" strokeWidth="1" />
+                        
+                        <text x="15" y="58" className="text-[9px] font-bold fill-slate-500">VA: <tspan className="fill-blue-600">{formatTime(totalVA)}</tspan></text>
+                        <text x="125" y="58" textAnchor="end" className="text-[9px] font-bold fill-slate-500">NVA: <tspan className="fill-orange-600">{formatTime(totalNVA)}</tspan></text>
+                      </g>
+                    </g>
+                  );
+                })()}
+              </svg>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

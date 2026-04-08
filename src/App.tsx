@@ -11,8 +11,10 @@ import { Toolbar } from './components/Toolbar';
 import { Canvas } from './components/Canvas';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { SummaryPanel } from './components/SummaryPanel';
-import { AnimatePresence } from 'motion/react';
+import { BalancerPage } from './components/BalancerPage';
+import { SimulationPage } from './components/SimulationPage';
 import { GripHorizontal } from 'lucide-react';
+import { AnimatePresence } from 'motion/react';
 
 export default function App() {
   const {
@@ -30,7 +32,9 @@ export default function App() {
     deleteElement,
     duplicateStation,
     updateActiveLine,
-    setLines
+    setLines,
+    undo,
+    redo
   } = useAssemblyLine();
 
   const metrics = useMetrics(stations, connections, settings);
@@ -41,6 +45,7 @@ export default function App() {
   const [connectSourceId, setConnectSourceId] = useState<string | null>(null);
   const [summaryHeight, setSummaryHeight] = useState(256);
   const [isResizing, setIsResizing] = useState(false);
+  const [currentView, setCurrentView] = useState<'editor' | 'balancer' | 'simulator'>('editor');
 
   // --- Handlers ---
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -97,13 +102,33 @@ export default function App() {
     }
   };
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        redo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
+
   const handleExportExcel = () => {
     const data = stations.map(s => {
       const flowFactor = metrics.flowFactors?.[s.id] || 0;
-      const isAutoBalanced = s.isAutoBalanced || settings.autoBalanceAll;
-      const workers = isAutoBalanced 
-        ? Math.max(1, Math.ceil((s.cycleTime * flowFactor) / metrics.adjustedTakt))
-        : s.workers;
+      const workers = s.workers;
       const effectiveCT = s.cycleTime / workers;
       const load = effectiveCT * flowFactor;
       
@@ -134,8 +159,7 @@ export default function App() {
       try {
         const imported = JSON.parse(event.target?.result as string);
         if (imported.lines && imported.settings) {
-          setLines(imported.lines);
-          setSettings(imported.settings);
+          setLines([...lines, ...imported.lines]);
           setActiveLineId(imported.lines[0].id);
         }
       } catch (err) {
@@ -146,12 +170,13 @@ export default function App() {
   };
 
   const handleExportJSON = () => {
-    const data = JSON.stringify({ lines, settings }, null, 2);
+    const activeLine = lines.find(l => l.id === activeLineId);
+    const data = JSON.stringify({ lines: activeLine ? [activeLine] : [], settings }, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = "AssemblyLineConfig.json";
+    a.download = `${activeLine?.name || 'AssemblyLine'}_Config.json`;
     a.click();
   };
 
@@ -164,6 +189,29 @@ export default function App() {
       setSelectedConnId(null);
     }
   };
+
+  if (currentView === 'balancer') {
+    return (
+      <BalancerPage 
+        lines={lines}
+        settings={settings}
+        onBack={() => setCurrentView('editor')}
+        onApply={(newLines) => {
+          setLines(newLines);
+        }}
+      />
+    );
+  }
+
+  if (currentView === 'simulator') {
+    return (
+      <SimulationPage 
+        lines={lines}
+        settings={settings}
+        onBack={() => setCurrentView('editor')}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
@@ -185,6 +233,8 @@ export default function App() {
         selectedConnId={selectedConnId}
         isConnecting={isConnecting}
         setIsConnecting={setIsConnecting}
+        onOpenBalancer={() => setCurrentView('balancer')}
+        onOpenSimulator={() => setCurrentView('simulator')}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -239,111 +289,6 @@ export default function App() {
         settings={settings}
         height={summaryHeight}
       />
-
-      {/* VSM Timelines at the bottom */}
-      {settings.showVsmInfo && metrics.criticalPathStationIds.length > 0 && (
-        <div className="bg-white border-t border-slate-200 p-4 z-10">
-          {/* Critical Path Timeline */}
-          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Critical Path Timeline</h3>
-          <div className="flex items-center gap-2 mb-6">
-            {metrics.criticalPathStationIds.map((id, index) => {
-              const station = stations.find(s => s.id === id);
-              return (
-                <React.Fragment key={id}>
-                  <div className="px-3 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-lg border border-blue-100">
-                    {station?.name}
-                  </div>
-                  {index < metrics.criticalPathStationIds.length - 1 && (
-                    <div className="w-4 h-px bg-slate-300" />
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </div>
-
-          {/* VSM Lead Time Timeline (Saw) */}
-          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">VSM Lead Time Timeline</h3>
-          <svg width="100%" height="100">
-            {(() => {
-              const cpStations = metrics.criticalPathStationIds.map(id => stations.find(s => s.id === id)!);
-              let currentX = 0;
-              const stepWidth = 100;
-              const points: string[] = [];
-              
-              cpStations.forEach((s, i) => {
-                const isInv = s.type === 'inventory';
-                const flowFactor = metrics.flowFactors?.[s.id] || 0;
-                const maxStationLoad = stations.reduce((max, st) => {
-                  if (st.type === 'inventory') return max;
-                  const ff = metrics.flowFactors?.[st.id] || 0;
-                  const isAutoBalanced = st.isAutoBalanced || settings.autoBalanceAll;
-                  const workers = isAutoBalanced 
-                    ? Math.max(1, Math.ceil((st.cycleTime * ff) / metrics.adjustedTakt))
-                    : st.workers;
-                  const load = (st.cycleTime / workers) * ff;
-                  return Math.max(max, load);
-                }, 0);
-                const systemTaktActual = Math.max(metrics.adjustedTakt, maxStationLoad);
-                
-                const time = isInv 
-                  ? (flowFactor > 0 ? (s.targetInventory || 0) * systemTaktActual / flowFactor : 0)
-                  : (s.cycleTime / ((s.isAutoBalanced || settings.autoBalanceAll) ? Math.max(1, Math.ceil((s.cycleTime * flowFactor) / metrics.adjustedTakt)) : s.workers));
-
-                if (i === 0) points.push(`M 0 ${isInv ? 0 : 40}`);
-                
-                if (isInv) {
-                  points.push(`L ${currentX + stepWidth} 0`);
-                  points.push(`L ${currentX + stepWidth} 40`);
-                } else {
-                  points.push(`L ${currentX + stepWidth} 40`);
-                  points.push(`L ${currentX + stepWidth} 0`);
-                }
-                
-                currentX += stepWidth;
-              });
-
-              return (
-                <g>
-                  <path d={points.join(' ')} fill="none" stroke="#cbd5e1" strokeWidth="2" />
-                  {cpStations.map((s, i) => {
-                    const isInv = s.type === 'inventory';
-                    const flowFactor = metrics.flowFactors?.[s.id] || 0;
-                    const maxStationLoad = stations.reduce((max, st) => {
-                      if (st.type === 'inventory') return max;
-                      const ff = metrics.flowFactors?.[st.id] || 0;
-                      const isAutoBalanced = st.isAutoBalanced || settings.autoBalanceAll;
-                      const workers = isAutoBalanced 
-                        ? Math.max(1, Math.ceil((st.cycleTime * ff) / metrics.adjustedTakt))
-                        : st.workers;
-                      const load = (st.cycleTime / workers) * ff;
-                      return Math.max(max, load);
-                    }, 0);
-                    const systemTaktActual = Math.max(metrics.adjustedTakt, maxStationLoad);
-                    
-                    const time = isInv 
-                      ? (flowFactor > 0 ? (s.targetInventory || 0) * systemTaktActual / flowFactor : 0)
-                      : (s.cycleTime / ((s.isAutoBalanced || settings.autoBalanceAll) ? Math.max(1, Math.ceil((s.cycleTime * flowFactor) / metrics.adjustedTakt)) : s.workers));
-                    
-                    const x1 = i * 100;
-                    const x2 = (i + 1) * 100;
-
-                    return (
-                      <g key={`vsm-${s.id}`}>
-                        <text x={(x1 + x2) / 2} y={isInv ? 10 : 70} textAnchor="middle" className="text-[10px] font-mono font-bold fill-slate-600">
-                          {time.toFixed(1)}m
-                        </text>
-                        <text x={(x1 + x2) / 2} y={isInv ? 22 : 82} textAnchor="middle" className="text-[8px] font-bold fill-slate-400 uppercase">
-                          {s.name}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </g>
-              );
-            })()}
-          </svg>
-        </div>
-      )}
     </div>
   );
 }

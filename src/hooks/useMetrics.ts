@@ -42,112 +42,32 @@ export function useMetrics(stations: Station[], connections: Connection[], setti
     let bottleneckStationId: string | null = null;
     let maxStationLoad = 0;
     let totalEffectiveCT = 0;
-    let totalWorkers = 0;
+    let totalFTE = 0;
 
     stations.forEach(s => {
       const flowFactor = flowFactors[s.id] || 0;
       if (s.type === 'inventory') return;
 
-      const isAutoBalanced = s.isAutoBalanced || settings.autoBalanceAll;
-      const workers = isAutoBalanced 
-        ? Math.max(1, Math.ceil((s.cycleTime * flowFactor) / adjustedTakt))
-        : s.workers;
+      let effectiveCT = 0;
+      let fte = 0;
+
+      if (s.type === 'machine') {
+        effectiveCT = s.cycleTime / (s.batchSize || 1);
+      } else {
+        fte = s.fte || 1;
+        effectiveCT = s.cycleTime / fte;
+        totalFTE += s.fte || 0;
+      }
       
-      const effectiveCT = s.cycleTime / workers;
       const stationLoad = effectiveCT * flowFactor;
       
       totalEffectiveCT += effectiveCT;
-      totalWorkers += workers;
       
       if (stationLoad > maxStationLoad) {
         maxStationLoad = stationLoad;
         bottleneckStationId = s.id;
       }
     });
-
-    // --- Worker Distribution Logic ---
-    const finalWorkers: Record<string, number> = {};
-    const idealInventories: Record<string, number> = {};
-
-    if (settings.autoBalanceAll) {
-      // 1. Ideal Worker Calculation (already handled above, but let's store it)
-      stations.forEach(s => {
-        if (s.type === 'inventory') return;
-        const ff = flowFactors[s.id] || 0;
-        finalWorkers[s.id] = Math.max(1, Math.ceil((s.cycleTime * ff) / adjustedTakt));
-      });
-
-      // 2. Ideal Buffer Calculation (to meet takt time)
-      // For buffers, we want to ensure they can decouple variability or just represent the WIP needed to maintain flow.
-      // A simple "ideal" buffer in VSM context often relates to the batch size or the demand during the replenishment interval.
-      // Here we'll calculate it as the inventory needed to cover the takt time if there's a mismatch, 
-      // but more simply, the user wants "ideal buffer size to meet takt time".
-      // If a station is slower than takt, a buffer upstream doesn't help much unless it's for decoupling.
-      // We'll calculate ideal inventory as 1.5x the flow factor (representing a safety stock of 1.5 units per takt interval)
-      stations.forEach(s => {
-        if (s.type === 'inventory') {
-          const ff = flowFactors[s.id] || 0;
-          idealInventories[s.id] = Math.ceil(ff * 2); // Rule of thumb: 2 units of WIP per flow unit
-        }
-      });
-    } else if (settings.useConstrainedBalance && settings.totalWorkersPool) {
-      // Constrained Optimization: Greedy approach to minimize bottleneck
-      const pool = settings.totalWorkersPool;
-      const activeStations = stations.filter(s => s.type !== 'inventory');
-      
-      // Start with 1 worker per station
-      activeStations.forEach(s => finalWorkers[s.id] = 1);
-      let remaining = pool - activeStations.length;
-
-      if (remaining > 0) {
-        for (let i = 0; i < remaining; i++) {
-          let worstStationId = '';
-          let worstLoad = -1;
-
-          activeStations.forEach(s => {
-            const currentWorkers = finalWorkers[s.id];
-            const maxAllowed = s.maxWorkersAllowed || 100;
-            if (currentWorkers < maxAllowed) {
-              const ff = flowFactors[s.id] || 0;
-              const currentLoad = (s.cycleTime / currentWorkers) * ff;
-              if (currentLoad > worstLoad) {
-                worstLoad = currentLoad;
-                worstStationId = s.id;
-              }
-            }
-          });
-
-          if (worstStationId) {
-            finalWorkers[worstStationId]++;
-          } else {
-            break; // All stations reached maxWorkersAllowed
-          }
-        }
-      }
-
-      // Recalculate metrics based on finalWorkers
-      maxStationLoad = 0;
-      totalWorkers = 0;
-      totalEffectiveCT = 0;
-      activeStations.forEach(s => {
-        const workers = finalWorkers[s.id];
-        const ff = flowFactors[s.id] || 0;
-        const effectiveCT = s.cycleTime / workers;
-        const stationLoad = effectiveCT * ff;
-        totalEffectiveCT += effectiveCT;
-        totalWorkers += workers;
-        if (stationLoad > maxStationLoad) {
-          maxStationLoad = stationLoad;
-          bottleneckStationId = s.id;
-        }
-      });
-    } else {
-      // Default behavior: use station.workers
-      stations.forEach(s => {
-        if (s.type === 'inventory') return;
-        finalWorkers[s.id] = s.workers;
-      });
-    }
 
     const lineOutput = maxStationLoad > 0 ? Math.floor(availableMinutes / maxStationLoad) : 0;
     const systemTakt = Math.max(adjustedTakt, maxStationLoad);
@@ -166,11 +86,13 @@ export function useMetrics(stations: Station[], connections: Connection[], setti
 
       if (station.type === 'inventory') {
         // Time in inventory = targetInventory * systemTakt / flowFactor
-        const inventory = settings.autoBalanceAll ? (idealInventories[currentId] || 0) : (station.targetInventory || 0);
+        const inventory = station.targetInventory || 0;
         currentWaitTime = flowFactor > 0 ? inventory * systemTakt / flowFactor : 0;
+      } else if (station.type === 'machine') {
+        currentWaitTime = station.cycleTime / (station.batchSize || 1);
       } else {
-        const workers = finalWorkers[currentId] || station.workers;
-        currentWaitTime = station.cycleTime / workers;
+        const fte = station.fte || 1;
+        currentWaitTime = station.cycleTime / fte;
       }
         
       const outgoing = connections.filter(c => c.sourceId === currentId && !c.isRework);
@@ -234,8 +156,8 @@ export function useMetrics(stations: Station[], connections: Connection[], setti
 
     const pce = (vaTime + nvaTime) > 0 ? (vaTime / (vaTime + nvaTime)) * 100 : 0;
 
-    const lineEfficiency = (maxStationLoad > 0 && totalWorkers > 0)
-      ? (totalEffectiveCT / (maxStationLoad * totalWorkers)) * 100
+    const lineEfficiency = (maxStationLoad > 0 && totalFTE > 0)
+      ? (totalEffectiveCT / (maxStationLoad * totalFTE)) * 100
       : 0;
 
     const wip = (lineOutput / availableMinutes) * leadTime;
@@ -244,15 +166,15 @@ export function useMetrics(stations: Station[], connections: Connection[], setti
       taktTime,
       adjustedDemand,
       adjustedTakt,
+      systemTakt,
+      maxStationLoad,
       bottleneckStationId,
       lineOutput,
       leadTime,
       lineEfficiency,
       wip,
-      totalWorkers,
+      totalFTE,
       flowFactors,
-      finalWorkers,
-      idealInventories,
       criticalPathStationIds,
       criticalPathConnectionIds,
       vaTime,
