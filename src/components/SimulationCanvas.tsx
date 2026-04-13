@@ -153,7 +153,8 @@ export function SimulationCanvas({
                     "font-bold capitalize",
                     (snapshot?.stationStates[hoveredStation.id] || 'idle') === 'working' ? 'text-blue-400' : 
                     ((snapshot?.stationStates[hoveredStation.id] || 'idle') === 'starved' ? 'text-red-400' : 
-                     (snapshot?.stationStates[hoveredStation.id] === 'down' ? 'text-slate-400' : 'text-amber-400'))
+                     ((snapshot?.stationStates[hoveredStation.id] || 'idle') === 'off-shift' ? 'text-slate-500' :
+                      (snapshot?.stationStates[hoveredStation.id] === 'down' ? 'text-slate-400' : 'text-amber-400')))
                   )}>
                     {snapshot?.stationStates[hoveredStation.id] || 'idle'}
                   </span>
@@ -183,13 +184,16 @@ export function SimulationCanvas({
       )}
 
       <svg width="100%" height="100%" className="bg-slate-50">
-        <defs>
+                <defs>
           <marker id="arrowhead-sim" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse">
             <path d="M 0 0 L 8 3 L 0 6 L 2 3 Z" fill="#94a3b8" />
           </marker>
           <marker id="arrowhead-rework-sim" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse">
             <path d="M 0 0 L 8 3 L 0 6 L 2 3 Z" fill="#ef4444" />
           </marker>
+          <pattern id="off-shift-pattern" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="10" stroke="#cbd5e1" strokeWidth="2" />
+          </pattern>
         </defs>
 
         <g transform={`translate(${offset.x}, ${offset.y}) scale(${scale})`}>
@@ -379,13 +383,14 @@ export function SimulationCanvas({
             const state = snapshot?.stationStates[s.id] || 'idle';
             const invCount = snapshot?.inventory[s.id] || 0;
 
-            const getStatusColor = () => {
+                const getStatusColor = () => {
               if (isInventory) return isSelected ? 'fill-blue-50 stroke-blue-500' : 'fill-white stroke-slate-300';
               switch (state) {
                 case 'working': return 'fill-blue-50 stroke-blue-500';
                 case 'starved': return 'fill-red-50 stroke-red-500';
                 case 'blocked': return 'fill-amber-50 stroke-amber-500';
                 case 'down': return 'fill-slate-200 stroke-slate-600';
+                case 'off-shift': return 'fill-[url(#off-shift-pattern)] stroke-slate-400';
                 default: return isSelected ? 'fill-blue-50 stroke-blue-500' : 'fill-white stroke-slate-300';
               }
             };
@@ -485,7 +490,7 @@ export function SimulationCanvas({
                       textAnchor="middle" 
                       className={cn(
                         "text-[8px] font-black uppercase tracking-widest pointer-events-none",
-                        state === 'working' ? 'fill-blue-600' : (state === 'starved' ? 'fill-red-600' : (state === 'down' ? 'fill-slate-600' : 'fill-amber-600'))
+                        state === 'working' ? 'fill-blue-600' : (state === 'starved' ? 'fill-red-600' : (state === 'down' ? 'fill-slate-600' : (state === 'off-shift' ? 'fill-slate-400' : 'fill-amber-600')))
                       )}
                     >
                       {state}

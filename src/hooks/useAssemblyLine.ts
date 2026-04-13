@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { AssemblyLine, Station, Connection, GlobalSettings } from '../types';
+import { AssemblyLine, Station, Connection, GlobalSettings, Group } from '../types';
 
 const INITIAL_LINE: AssemblyLine = {
   id: 'line1',
@@ -20,26 +20,19 @@ const INITIAL_LINE: AssemblyLine = {
 
 const SUB_ASSEMBLY_LINE: AssemblyLine = {
   id: 'line2',
-  name: 'Sub-Assembly Demo',
+  name: 'Kanban & Assembly Demo',
   stations: [
-    { id: 'a', name: 'A (Main)', cycleTime: 5, fte: 1, x: 50, y: 200, type: 'station' },
-    { id: 'b', name: 'B', cycleTime: 5, fte: 1, x: 200, y: 100, type: 'station' },
-    { id: 'c', name: 'C', cycleTime: 5, fte: 1, x: 350, y: 100, type: 'station' },
-    { id: 'd', name: 'D (Sub)', cycleTime: 5, fte: 1, x: 200, y: 300, type: 'station' },
-    { id: 'e', name: 'E (Assembly)', cycleTime: 5, fte: 1, x: 500, y: 200, type: 'station', flowMode: 'assembly' },
-    { id: 'new', name: 'New Parts', cycleTime: 0, fte: 0, x: 350, y: 300, type: 'inventory', targetInventory: 10 },
-    { id: 'buf1', name: 'Buffer C-E', cycleTime: 0, fte: 0, x: 425, y: 100, type: 'inventory', targetInventory: 5 },
-    { id: 'buf2', name: 'Buffer D-E', cycleTime: 0, fte: 0, x: 425, y: 300, type: 'inventory', targetInventory: 5 }
+    { id: 'raw', name: 'Raw Materials', cycleTime: 0, fte: 0, x: 100, y: 100, type: 'inventory', isKanbanSource: true },
+    { id: 'sub1', name: 'Sub-Assembly', cycleTime: 4, fte: 1, x: 300, y: 100, type: 'station' },
+    { id: 'parts', name: 'Purchased Parts', cycleTime: 0, fte: 0, x: 300, y: 300, type: 'inventory', isKanbanSource: true },
+    { id: 'main', name: 'Main Assembly', cycleTime: 6, fte: 2, x: 500, y: 200, type: 'station', flowMode: 'assembly' },
+    { id: 'pack', name: 'Packaging', cycleTime: 5, fte: 1, x: 700, y: 200, type: 'station' }
   ],
   connections: [
-    { id: 'c1', sourceId: 'a', targetId: 'b', splitPercent: 100, isRework: false },
-    { id: 'c2', sourceId: 'b', targetId: 'c', splitPercent: 100, isRework: false },
-    { id: 'c3', sourceId: 'c', targetId: 'buf1', splitPercent: 100, isRework: false },
-    { id: 'c4', sourceId: 'buf1', targetId: 'e', splitPercent: 100, isRework: false },
-    { id: 'c5', sourceId: 'a', targetId: 'd', splitPercent: 30, isRework: false },
-    { id: 'c6', sourceId: 'd', targetId: 'buf2', splitPercent: 100, isRework: false },
-    { id: 'c7', sourceId: 'buf2', targetId: 'e', splitPercent: 100, isRework: false },
-    { id: 'c8', sourceId: 'new', targetId: 'e', splitPercent: 70, isRework: false }
+    { id: 'c1', sourceId: 'raw', targetId: 'sub1', splitPercent: 100, isRework: false },
+    { id: 'c2', sourceId: 'sub1', targetId: 'main', splitPercent: 100, isRework: false, inputGroup: 'sub-parts' },
+    { id: 'c3', sourceId: 'parts', targetId: 'main', splitPercent: 100, isRework: false, inputGroup: 'purchased' },
+    { id: 'c4', sourceId: 'main', targetId: 'pack', splitPercent: 100, isRework: false }
   ]
 };
 
@@ -51,7 +44,8 @@ export function useAssemblyLine() {
   const [settings, setSettings] = useState<GlobalSettings>({
     demand: 100,
     availableHours: 8,
-    autoBalanceAll: false
+    enableAI: true,
+    showHeatmap: true
   });
 
   const commitLines = useCallback((newLines: AssemblyLine[]) => {
@@ -80,7 +74,49 @@ export function useAssemblyLine() {
   }, [history, historyIndex]);
 
   const activeLine = lines.find(l => l.id === activeLineId) || lines[0];
-  const { stations, connections } = activeLine;
+  const { stations, connections, groups = [] } = activeLine;
+
+  const addGroup = useCallback((stationIds: string[]) => {
+    const groupStations = stations.filter(s => stationIds.includes(s.id));
+    if (groupStations.length === 0) return null;
+
+    const minX = Math.min(...groupStations.map(s => s.x));
+    const minY = Math.min(...groupStations.map(s => s.y));
+    const maxX = Math.max(...groupStations.map(s => s.x + 100)); // Assuming 100 width
+    const maxY = Math.max(...groupStations.map(s => s.y + 50)); // Assuming 50 height
+
+    const newGroup: Group = {
+      id: `g${Date.now()}`,
+      name: `Group ${groups.length + 1}`,
+      stationIds,
+      x: minX - 20,
+      y: minY - 20,
+      width: maxX - minX + 40,
+      height: maxY - minY + 40
+    };
+    commitLines(lines.map(l => l.id === activeLineId ? { ...l, groups: [...(l.groups || []), newGroup] } : l));
+    return newGroup.id;
+  }, [lines, activeLineId, commitLines, stations, groups.length]);
+
+  const updateGroup = useCallback((id: string, updates: Partial<Group>) => {
+    commitLines(lines.map(line => {
+      if (line.id !== activeLineId || !line.groups) return line;
+      return {
+        ...line,
+        groups: line.groups.map(g => g.id === id ? { ...g, ...updates } : g)
+      };
+    }));
+  }, [lines, activeLineId, commitLines]);
+
+  const deleteGroup = useCallback((id: string) => {
+    commitLines(lines.map(line => {
+      if (line.id !== activeLineId || !line.groups) return line;
+      return {
+        ...line,
+        groups: line.groups.filter(g => g.id !== id)
+      };
+    }));
+  }, [lines, activeLineId, commitLines]);
 
   const updateActiveLine = useCallback((updates: Partial<AssemblyLine>) => {
     commitLines(lines.map(l => l.id === activeLineId ? { ...l, ...updates } : l));
@@ -119,6 +155,7 @@ export function useAssemblyLine() {
       x: Math.random() * 400 + 100,
       y: Math.random() * 300 + 100,
       type,
+      flowMode: 'additive',
       capacity: type === 'inventory' ? 100 : undefined,
       targetInventory: type === 'inventory' ? 10 : undefined,
       batchSize: type === 'machine' ? 1 : undefined
@@ -180,8 +217,12 @@ export function useAssemblyLine() {
     setSettings,
     stations,
     connections,
+    groups,
     updateStation,
     updateConnection,
+    addGroup,
+    updateGroup,
+    deleteGroup,
     addStation,
     addConnection,
     deleteElement,

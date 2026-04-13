@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { Station, Connection, GlobalSettings, Metrics } from '../types';
+import { getAvailableMinutes } from '../utils/timeUtils';
 
 export function useMetrics(stations: Station[], connections: Connection[], settings: GlobalSettings) {
   return useMemo((): Metrics => {
-    const { demand, availableHours } = settings;
-    const availableMinutes = availableHours * 60;
+    const { demand } = settings;
+    const availableMinutes = getAvailableMinutes(settings);
     
     const taktTime = availableMinutes / demand;
     const adjustedDemand = demand;
@@ -51,11 +52,15 @@ export function useMetrics(stations: Station[], connections: Connection[], setti
       let effectiveCT = 0;
       let fte = 0;
 
+      const learningFactor = (s.learningCurve || 100) / 100;
+      const setupPerUnit = (s.setupTime || 0) / (s.batchSize || 1);
+      const handlingTime = (s.materialHandlingTime || 0);
+
       if (s.type === 'machine') {
-        effectiveCT = s.cycleTime / (s.batchSize || 1);
+        effectiveCT = (s.cycleTime / (s.batchSize || 1)) + setupPerUnit + handlingTime;
       } else {
         fte = s.fte || 1;
-        effectiveCT = s.cycleTime / fte;
+        effectiveCT = (s.cycleTime / (fte * learningFactor)) + setupPerUnit + handlingTime;
         totalFTE += s.fte || 0;
       }
       
@@ -84,15 +89,19 @@ export function useMetrics(stations: Station[], connections: Connection[], setti
       const flowFactor = flowFactors[currentId] || 0;
       let currentWaitTime = 0;
 
+      const learningFactor = (station.learningCurve || 100) / 100;
+      const setupPerUnit = (station.setupTime || 0) / (station.batchSize || 1);
+      const handlingTime = (station.materialHandlingTime || 0);
+
       if (station.type === 'inventory') {
         // Time in inventory = targetInventory * systemTakt / flowFactor
         const inventory = station.targetInventory || 0;
         currentWaitTime = flowFactor > 0 ? inventory * systemTakt / flowFactor : 0;
       } else if (station.type === 'machine') {
-        currentWaitTime = station.cycleTime / (station.batchSize || 1);
+        currentWaitTime = (station.cycleTime / (station.batchSize || 1)) + setupPerUnit + handlingTime;
       } else {
         const fte = station.fte || 1;
-        currentWaitTime = station.cycleTime / fte;
+        currentWaitTime = (station.cycleTime / (fte * learningFactor)) + setupPerUnit + handlingTime;
       }
         
       const outgoing = connections.filter(c => c.sourceId === currentId && !c.isRework);

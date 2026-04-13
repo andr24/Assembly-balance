@@ -19,6 +19,19 @@ export interface Station {
   batchSize?: number; // units
   flowMode?: 'additive' | 'assembly';
   isKanbanSource?: boolean;
+  setupTime?: number; // minutes
+  materialHandlingTime?: number; // minutes
+  learningCurve?: number; // percentage 0-100 (100% = full speed)
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  stationIds: string[];
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface Connection {
@@ -37,12 +50,35 @@ export interface AssemblyLine {
   name: string;
   stations: Station[];
   connections: Connection[];
+  groups?: Group[];
+}
+
+export interface Shift {
+  id: string;
+  name: string;
+  startTime: string; // "HHhMM"
+  endTime: string; // "HHhMM"
+  lunchBreakStart?: string; // "HHhMM"
+  lunchBreakEnd?: string; // "HHhMM"
+  fte: number;
+}
+
+export interface Schedule {
+  days: {
+    shifts: Shift[];
+  }[]; // 7 days
 }
 
 export interface GlobalSettings {
   demand: number; // units/day
   availableHours: number; // hrs/day
+  schedule?: Schedule;
   showVsmInfo?: boolean;
+  showHeatmap?: boolean;
+  enableAI?: boolean;
+  aiProvider?: 'gemini' | 'openai' | 'custom';
+  aiApiKey?: string;
+  aiEndpoint?: string; // For custom providers
 }
 
 export interface Metrics {
@@ -66,10 +102,16 @@ export interface Metrics {
   pce: number;
 }
 
-export type StationState = 'working' | 'starved' | 'blocked' | 'idle' | 'down';
+export type StationState = 'working' | 'starved' | 'blocked' | 'idle' | 'down' | 'off-shift';
 
 export interface SimulationSnapshot {
   time: number; // minutes from start
+  dayIndex: number;
+  shiftIndex: number;
+  shiftName: string;
+  shiftStartTime?: string;
+  shiftEndTime?: string;
+  weekday: string;
   output: number;
   defects: number; // cumulative defects
   rework: number; // cumulative rework
@@ -77,8 +119,19 @@ export interface SimulationSnapshot {
   stationOutputs: Record<string, number>; // cumulative output per station
   wip: number;
   stationStates: Record<string, StationState>;
+  staffingRatio?: number;
   missingParts?: Record<string, string[]>; // stationId -> list of source station names missing
   units: { id: string, stationId?: string, connectionId?: string, progress: number }[];
+}
+
+export interface ShiftMetric {
+  dayIndex: number;
+  shiftIndex: number;
+  shiftName: string;
+  weekday: string;
+  output: number;
+  defects: number;
+  rework: number;
 }
 
 export interface SimulationResult {
@@ -93,4 +146,5 @@ export interface SimulationResult {
   defectsByStation: Record<string, number>;
   reworkByStation: Record<string, number>;
   outputsByStation: Record<string, number>;
+  shiftMetrics: ShiftMetric[];
 }

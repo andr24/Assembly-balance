@@ -10,11 +10,13 @@ export interface BalancerResult {
   flowFactors: Record<string, Record<string, number>>;
 }
 
+export type BalancingStrategy = 'efficiency' | 'equalize';
+
 export function balanceLines(
   lines: AssemblyLine[],
-  globalConstraints: { totalFtePool: number; demand: number; availableHours: number }
+  globalConstraints: { totalFtePool: number; demand: number; availableHours: number; strategy?: BalancingStrategy }
 ): BalancerResult {
-  const { totalFtePool, demand, availableHours } = globalConstraints;
+  const { totalFtePool, demand, availableHours, strategy = 'efficiency' } = globalConstraints;
   const availableMinutes = availableHours * 60;
   const taktTime = availableMinutes / demand;
 
@@ -59,7 +61,9 @@ export function balanceLines(
     line.stations.forEach(s => {
       if (s.type === 'machine' && !s.isKanbanSource) {
         const ff = flowFactors[s.id] || 0;
-        const load = (s.cycleTime / (s.batchSize || 1)) * ff;
+        const setupPerUnit = (s.setupTime || 0) / (s.batchSize || 1);
+        const handlingTime = (s.materialHandlingTime || 0);
+        const load = ((s.cycleTime / (s.batchSize || 1)) + setupPerUnit + handlingTime) * ff;
         if (load > maxMachineLoad) maxMachineLoad = load;
       } else if (s.type !== 'inventory' && !s.isKanbanSource) {
         allStations.push({ lineId: line.id, station: s, flowFactor: flowFactors[s.id] || 0 });
@@ -69,10 +73,14 @@ export function balanceLines(
     lineMachineMaxLoad[line.id] = maxMachineLoad;
   });
 
-  // 2. Initial assignment: minFteRequired
+  // 2. Initial assignment: minFteRequired (capped by constraints)
   let totalAssigned = 0;
   allStations.forEach(item => {
-    const minFte = Math.max(1, item.station.minFteRequired || 1);
+    const maxAllowed = Math.min(
+      item.station.maxFteAllowed || 1000,
+      item.station.trainedFteAvailable || 1000
+    );
+    const minFte = Math.min(maxAllowed, Math.max(1, item.station.minFteRequired || 1));
     item.station.fte = minFte;
     totalAssigned += minFte;
   });
@@ -81,7 +89,7 @@ export function balanceLines(
 
   // 3. Iteratively assign fte to the most constrained stations
   if (remainingFte > 0) {
-    const increments = remainingFte * 2;
+    const increments = Math.floor(remainingFte * 2);
     for (let i = 0; i < increments; i++) {
       let worstStation: { lineId: string; station: Station; flowFactor: number } | null = null;
       let worstLoad = -1;
@@ -94,11 +102,15 @@ export function balanceLines(
         );
         
         if (currentFte < maxAllowed) {
-          const currentLoad = (item.station.cycleTime / currentFte) * item.flowFactor;
+          const learningFactor = (item.station.learningCurve || 100) / 100;
+          const setupPerUnit = (item.station.setupTime || 0) / (item.station.batchSize || 1);
+          const handlingTime = (item.station.materialHandlingTime || 0);
+          const currentLoad = ((item.station.cycleTime / (currentFte * learningFactor)) + setupPerUnit + handlingTime) * item.flowFactor;
           const machineBottleneck = lineMachineMaxLoad[item.lineId] || 0;
-          const targetLoad = Math.max(machineBottleneck, taktTime);
+          const targetLoad = strategy === 'efficiency' ? Math.max(machineBottleneck, taktTime) : 0;
           
           // Only add fte if it improves the line (load > targetLoad)
+          // In 'equalize' mode, targetLoad is 0, so it always tries to improve the worst station
           if (currentLoad > targetLoad && currentLoad > worstLoad) {
             worstLoad = currentLoad;
             worstStation = item;
@@ -131,11 +143,15 @@ export function balanceLines(
       let effectiveCT = 0;
       let fte = 0;
 
+      const learningFactor = (s.learningCurve || 100) / 100;
+      const setupPerUnit = (s.setupTime || 0) / (s.batchSize || 1);
+      const handlingTime = (s.materialHandlingTime || 0);
+
       if (s.type === 'machine' && !s.isKanbanSource) {
-        effectiveCT = s.cycleTime / (s.batchSize || 1);
+        effectiveCT = (s.cycleTime / (s.batchSize || 1)) + setupPerUnit + handlingTime;
       } else if (s.type !== 'machine' && !s.isKanbanSource) {
         fte = s.fte;
-        effectiveCT = s.cycleTime / fte;
+        effectiveCT = (s.cycleTime / (fte * learningFactor)) + setupPerUnit + handlingTime;
         lineFte += fte;
       }
       

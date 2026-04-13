@@ -25,8 +25,12 @@ export default function App() {
     setSettings,
     stations,
     connections,
+    groups,
     updateStation,
     updateConnection,
+    addGroup,
+    updateGroup,
+    deleteGroup,
     addStation,
     addConnection,
     deleteElement,
@@ -39,7 +43,8 @@ export default function App() {
 
   const metrics = useMetrics(stations, connections, settings);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedStationIds, setSelectedStationIds] = useState<string[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectSourceId, setConnectSourceId] = useState<string | null>(null);
@@ -128,7 +133,7 @@ export default function App() {
   const handleExportExcel = () => {
     const data = stations.map(s => {
       const flowFactor = metrics.flowFactors?.[s.id] || 0;
-      const workers = s.workers;
+      const workers = s.fte;
       const effectiveCT = s.cycleTime / workers;
       const load = effectiveCT * flowFactor;
       
@@ -181,12 +186,15 @@ export default function App() {
   };
 
   const handleDelete = () => {
-    if (selectedId) {
-      deleteElement(selectedId, 'station');
-      setSelectedId(null);
+    if (selectedStationIds.length > 0) {
+      selectedStationIds.forEach(id => deleteElement(id, 'station'));
+      setSelectedStationIds([]);
     } else if (selectedConnId) {
       deleteElement(selectedConnId, 'connection');
       setSelectedConnId(null);
+    } else if (selectedGroupId) {
+      deleteGroup(selectedGroupId);
+      setSelectedGroupId(null);
     }
   };
 
@@ -208,6 +216,7 @@ export default function App() {
       <SimulationPage 
         lines={lines}
         settings={settings}
+        setSettings={setSettings}
         onBack={() => setCurrentView('editor')}
       />
     );
@@ -229,22 +238,27 @@ export default function App() {
         onExport={handleExportJSON}
         onExportExcel={handleExportExcel}
         onImport={handleImportJSON}
-        selectedId={selectedId}
+        selectedIds={selectedStationIds}
         selectedConnId={selectedConnId}
         isConnecting={isConnecting}
         setIsConnecting={setIsConnecting}
         onOpenBalancer={() => setCurrentView('balancer')}
         onOpenSimulator={() => setCurrentView('simulator')}
+        stations={stations}
+        addGroup={addGroup}
       />
 
       <div className="flex-1 flex overflow-hidden">
         <Canvas 
           stations={stations}
           connections={connections}
+          groups={groups}
           metrics={metrics}
           settings={settings}
-          selectedId={selectedId}
-          setSelectedId={setSelectedId}
+          selectedStationIds={selectedStationIds}
+          setSelectedStationIds={setSelectedStationIds}
+          selectedGroupId={selectedGroupId}
+          setSelectedGroupId={setSelectedGroupId}
           selectedConnId={selectedConnId}
           setSelectedConnId={setSelectedConnId}
           isConnecting={isConnecting}
@@ -257,18 +271,27 @@ export default function App() {
           duplicateStation={duplicateStation}
           updateStation={updateStation}
           updateConnection={updateConnection}
+          updateGroup={updateGroup}
+          deleteGroup={deleteGroup}
+          addGroup={addGroup}
         />
 
         <PropertiesPanel 
-          selectedId={selectedId}
+          selectedStationIds={selectedStationIds}
+          selectedGroupId={selectedGroupId}
           selectedConnId={selectedConnId}
           stations={stations}
           connections={connections}
           metrics={metrics}
           settings={settings}
+          lines={lines}
+          activeLineId={activeLineId}
           updateStation={updateStation}
           updateConnection={updateConnection}
-          setSelectedId={setSelectedId}
+          updateGroup={updateGroup}
+          deleteGroup={deleteGroup}
+          setSelectedStationIds={setSelectedStationIds}
+          setSelectedGroupId={setSelectedGroupId}
           setSelectedConnId={setSelectedConnId}
         />
       </div>

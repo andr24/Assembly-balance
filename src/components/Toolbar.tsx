@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Settings2, Download, Upload, BarChart3, LayoutDashboard, Zap, Info, ChevronDown, FileJson, FileSpreadsheet, Pencil, Check, X, Activity } from 'lucide-react';
-import { GlobalSettings, AssemblyLine } from '../types';
+import { Plus, Trash2, Settings2, Download, Upload, BarChart3, LayoutDashboard, Zap, Info, ChevronDown, FileJson, FileSpreadsheet, Pencil, Check, X, Activity, Sparkles } from 'lucide-react';
+import { GlobalSettings, AssemblyLine, Station } from '../types';
 import { InfoTooltip } from './InfoTooltip';
 
 interface ToolbarProps {
@@ -17,12 +17,14 @@ interface ToolbarProps {
   onExport: () => void;
   onExportExcel: () => void;
   onImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  selectedId: string | null;
+  selectedIds: string[];
   selectedConnId: string | null;
   isConnecting: boolean;
   setIsConnecting: (b: boolean) => void;
   onOpenBalancer: () => void;
   onOpenSimulator: () => void;
+  stations: Station[];
+  addGroup: (stationIds: string[]) => void;
 }
 
 export function Toolbar({
@@ -39,12 +41,14 @@ export function Toolbar({
   onExport,
   onExportExcel,
   onImport,
-  selectedId,
+  selectedIds,
   selectedConnId,
   isConnecting,
   setIsConnecting,
   onOpenBalancer,
-  onOpenSimulator
+  onOpenSimulator,
+  stations,
+  addGroup
 }: ToolbarProps) {
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showDataMenu, setShowDataMenu] = useState(false);
@@ -208,6 +212,62 @@ export function Toolbar({
                 VSM Info
                 <LayoutDashboard size={16} fill={settings.showVsmInfo ? "currentColor" : "none"} />
               </button>
+              <button 
+                onClick={() => setSettings({ ...settings, showHeatmap: !settings.showHeatmap })}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-bold ${settings.showHeatmap ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                Utilization Heatmap
+                <Activity size={16} fill={settings.showHeatmap ? "currentColor" : "none"} />
+              </button>
+              <button 
+                onClick={() => setSettings({ ...settings, enableAI: !settings.enableAI })}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-bold ${settings.enableAI ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                AI Insights
+                <Zap size={16} fill={settings.enableAI ? "currentColor" : "none"} />
+              </button>
+
+              {settings.enableAI && (
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 mt-2 space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">AI Provider</label>
+                    <select 
+                      value={settings.aiProvider || ''}
+                      onChange={e => setSettings({ ...settings, aiProvider: e.target.value as any })}
+                      className="w-full bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="" disabled>Select Provider...</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="custom">Custom (OpenAI Compatible)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">API Key</label>
+                    <input 
+                      type="password"
+                      value={settings.aiApiKey || ''}
+                      onChange={e => setSettings({ ...settings, aiApiKey: e.target.value })}
+                      placeholder="Enter API Key..."
+                      className="w-full bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {settings.aiProvider === 'custom' && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Endpoint URL</label>
+                      <input 
+                        type="text"
+                        value={settings.aiEndpoint || ''}
+                        onChange={e => setSettings({ ...settings, aiEndpoint: e.target.value })}
+                        placeholder="https://api.example.com/v1"
+                        className="w-full bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -242,6 +302,28 @@ export function Toolbar({
               >
                 <FileJson size={16} />
                 Export JSON
+              </button>
+              <div className="h-px bg-slate-100 my-1" />
+              <button 
+                onClick={() => {
+                  const data = {
+                    line: lines.find(l => l.id === activeLineId),
+                    settings,
+                    timestamp: new Date().toISOString(),
+                    context: "Assembly Line Configuration for AI Analysis"
+                  };
+                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `ai-export-${activeLineId}.json`;
+                  a.click();
+                  setShowDataMenu(false);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-bold text-blue-600 hover:bg-blue-50"
+              >
+                <Sparkles size={16} />
+                Export for AI
               </button>
             </div>
           )}

@@ -1,114 +1,154 @@
-import { AssemblyLine, GlobalSettings, SimulationResult, SimulationSnapshot, Station, StationState } from '../types';
+import { AssemblyLine, GlobalSettings, SimulationResult, Station, StationState, SimulationSnapshot, ShiftMetric, Connection } from '../types';
+import { parseTime } from './timeUtils';
 
 export function runSimulation(
   line: AssemblyLine,
   settings: GlobalSettings,
-  durationMinutes: number = 480, // Default 8 hours
+  durationMinutes: number = 480,
   snapshotInterval: number = 10,
-  variability: number = 0, // 0 to 100 percentage
-  enableRework: boolean = true
+  variability: number = 0,
+  enableRework: boolean = true,
+  startTime: number = 0,
+  endTime: number = 1440
 ): SimulationResult {
+  console.log("runSimulation settings.schedule:", JSON.stringify(settings.schedule));
   const stations = line.stations;
   const connections = line.connections;
-
-  // Initialize state
-  const inventory: Record<string, Record<string, number>> = {}; // stationId -> sourceId -> count
-  const reworkInventory: Record<string, number> = {};
-  const progress: Record<string, number> = {}; // 0 to 1
-  const activeUnits: Record<string, number> = {}; // number of units currently being processed
-  const currentUnitCT: Record<string, number> = {}; // CT for the current unit being processed
-  const isRepairing: Record<string, boolean> = {}; // whether the station is currently repairing a unit on-the-spot
-  const isDown: Record<string, boolean> = {}; // whether the station is currently broken down (MTBF/MTTR)
-  const utilization: Record<string, number> = {}; // total minutes working
-  const starvation: Record<string, number> = {}; // total minutes starved
-  const blockage: Record<string, number> = {}; // total minutes blocked
-  const defectsByStation: Record<string, number> = {};
-  const reworkByStation: Record<string, number> = {};
+  const inventory: Record<string, Record<string, number>> = {};
+  const activeUnits: Record<string, number> = {};
+  const progress: Record<string, number> = {};
+  const isDown: Record<string, boolean> = {};
+  const blockage: Record<string, number> = {};
+  const starvation: Record<string, number> = {};
+  const utilization: Record<string, number> = {};
   const outputsByStation: Record<string, number> = {};
-  
-  // Transit tracking
-  interface TransitUnit {
-    id: string;
-    connectionId: string;
-    targetId: string;
-    sourceId: string;
-    startTime: number;
-    duration: number;
-  }
-  let transitUnits: TransitUnit[] = [];
+  const reworkByStation: Record<string, number> = {};
+  const defectsByStation: Record<string, number> = {};
+  const reworkInventory: Record<string, number> = {};
+  const isRepairing: Record<string, boolean> = {};
+  const currentUnitCT: Record<string, number> = {};
+  const availableMinutes: Record<string, number> = {};
+  let transitUnits: any[] = [];
   let unitCounter = 0;
-
   let totalOutput = 0;
-  let totalDefects = 0;
   let totalRework = 0;
-  const snapshots: SimulationSnapshot[] = [];
+  let totalDefects = 0;
 
   stations.forEach(s => {
     inventory[s.id] = {};
-    // Initialize input queues for all upstream connections
-    connections.filter(c => c.targetId === s.id && !c.isRework).forEach(c => {
-      inventory[s.id][c.sourceId] = s.type === 'inventory' ? Math.floor((s.capacity || 10) * 0.5) : 0;
-    });
-
-    // If it's an inventory with no upstream, it's a source
-    const hasUpstream = connections.some(c => c.targetId === s.id && !c.isRework);
-    if (s.type === 'inventory' && !hasUpstream) {
-      // Sources start full
-      inventory[s.id]['source'] = s.capacity || 1000; 
-    }
-
-    reworkInventory[s.id] = 0;
-    progress[s.id] = 0;
     activeUnits[s.id] = 0;
-    currentUnitCT[s.id] = 0;
-    isRepairing[s.id] = false;
+    progress[s.id] = 0;
     isDown[s.id] = false;
-    utilization[s.id] = 0;
-    starvation[s.id] = 0;
     blockage[s.id] = 0;
-    defectsByStation[s.id] = 0;
-    reworkByStation[s.id] = 0;
+    starvation[s.id] = 0;
+    utilization[s.id] = 0;
     outputsByStation[s.id] = 0;
+    reworkByStation[s.id] = 0;
+    defectsByStation[s.id] = 0;
+    reworkInventory[s.id] = 0;
+    isRepairing[s.id] = false;
+    availableMinutes[s.id] = 0;
   });
 
-  // Simulation loop (minute by minute)
-  for (let t = 0; t <= durationMinutes; t++) {
+  const snapshots: SimulationSnapshot[] = [];
+  const shiftMetricsMap: Record<string, ShiftMetric> = {};
+  let prevTotalOutput = 0;
+  let prevTotalDefects = 0;
+  let prevTotalRework = 0;
+
+  const totalLineFteRequired = stations.reduce((acc, s) => acc + (s.fte || 0), 0);
+
+  for (let t = startTime; t <= endTime; t++) {
+    const minutesInDay = t % 1440;
+    const dayIndex = Math.floor(t / 1440);
+    const dayOfWeek = dayIndex % 7;
+    const currentStates: Record<string, StationState> = {};
+    const onShiftStatus: Record<string, boolean> = {};
+    
+    const daySchedule = settings.schedule?.days[dayOfWeek];
+    let currentShiftFte: number | undefined = undefined;
+    let currentShift: any = null;
+
+    const isStationOnShift = (s: Station) => {
+      if (!settings.schedule) return true;
+      if (!daySchedule) return false;
+
+      const shift = daySchedule.shifts.find(shift => {
+        const start = parseTime(shift.startTime);
+        const end = parseTime(shift.endTime);
+        const lunchStart = shift.lunchBreakStart ? parseTime(shift.lunchBreakStart) : -1;
+        const lunchEnd = shift.lunchBreakEnd ? parseTime(shift.lunchBreakEnd) : -1;
+
+        let onShift = false;
+        if (start <= end) {
+          onShift = minutesInDay >= start && minutesInDay < end;
+        } else {
+          // Spans midnight
+          onShift = minutesInDay >= start || minutesInDay < end;
+        }
+
+        let onLunch = false;
+        if (lunchStart !== -1 && lunchEnd !== -1) {
+          if (lunchStart <= lunchEnd) {
+            onLunch = minutesInDay >= lunchStart && minutesInDay < lunchEnd;
+          } else {
+            // Lunch spans midnight
+            onLunch = minutesInDay >= lunchStart || minutesInDay < lunchEnd;
+          }
+        }
+
+        if (onShift && !onLunch) {
+          currentShift = shift;
+          currentShiftFte = shift.fte;
+        }
+
+        return onShift && !onLunch;
+      });
+      
+      return !!shift;
+    };
+    
+    stations.forEach(s => {
+      onShiftStatus[s.id] = isStationOnShift(s);
+      if (onShiftStatus[s.id]) {
+        availableMinutes[s.id]++;
+      }
+      currentStates[s.id] = isDown[s.id] ? 'down' : (onShiftStatus[s.id] ? 'idle' : 'off-shift');
+    });
+
+    const staffingRatio = (currentShiftFte !== undefined && totalLineFteRequired > 0) 
+      ? (currentShiftFte / totalLineFteRequired) 
+      : 1;
+
     // 0. TRANSIT: Move units along connections
     transitUnits = transitUnits.filter(tu => {
       if (t >= tu.startTime + tu.duration) {
-        // Unit arrived at target inventory
         inventory[tu.targetId][tu.sourceId] = (inventory[tu.targetId][tu.sourceId] || 0) + 1;
         return false;
       }
       return true;
     });
 
-    // 0.5 BREAKDOWNS: Check if machines/stations are operational this minute
+    // 0.5 BREAKDOWNS
     stations.forEach(s => {
       if (s.mtbf !== undefined && s.mttr !== undefined && s.mtbf > 0 && s.mttr > 0) {
         if (isDown[s.id]) {
-          // Try to recover: 1/MTTR chance per minute
           if (Math.random() < (1 / s.mttr)) isDown[s.id] = false;
         } else {
-          // Chance to fail: 1/MTBF chance per minute
           if (Math.random() < (1 / s.mtbf)) isDown[s.id] = true;
         }
       }
     });
 
-    // 1. PUSH: Stations that are finished try to push to downstream
+    // 1. PUSH
     stations.forEach(s => {
-      if (isDown[s.id]) return;
+      if (isDown[s.id] || !onShiftStatus[s.id]) return;
       if (s.type === 'inventory') {
-        // Inventories always try to push if they have items
         let items = Object.values(inventory[s.id]).reduce((a, b) => a + b, 0);
         let pushesThisMinute = 0;
-        
         while (items >= 1 && pushesThisMinute < 100) {
           const downstreamConns = connections.filter(c => c.sourceId === s.id && !c.isRework);
-          
           if (downstreamConns.length === 0) {
-            // End of line
             const sourceKey = Object.keys(inventory[s.id]).find(k => inventory[s.id][k] >= 1);
             if (sourceKey) {
               inventory[s.id][sourceKey]--;
@@ -116,11 +156,8 @@ export function runSimulation(
               totalOutput++;
               items--;
               pushesThisMinute++;
-            } else {
-              break;
-            }
+            } else break;
           } else {
-            // Try to push to one of the downstream connections
             const availableConns = downstreamConns.filter(c => {
               const target = stations.find(st => st.id === c.targetId);
               if (target?.isKanbanSource) return true;
@@ -129,22 +166,20 @@ export function runSimulation(
                 const inTransitToTarget = transitUnits.filter(tu => tu.targetId === c.targetId).length;
                 return (currentTargetInv + inTransitToTarget) < (target?.capacity || 100);
               } else {
-                // For machines, check per-source capacity to prevent deadlocks in assembly mode
                 const currentTargetInvFromSource = inventory[c.targetId][s.id] || 0;
                 const inTransitToTargetFromSource = transitUnits.filter(tu => tu.targetId === c.targetId && tu.sourceId === s.id).length;
                 return (currentTargetInvFromSource + inTransitToTargetFromSource) < (target?.capacity || 10);
               }
             });
-
             if (availableConns.length > 0) {
-              const totalWeight = availableConns.reduce((sum, c) => sum + (c.splitPercent ?? 100), 0);
-              let conn = availableConns[availableConns.length - 1];
+              // Split logic based on splitPercent
+              let conn = availableConns[0];
+              const totalWeight = availableConns.reduce((acc, c) => acc + (c.splitPercent || 0), 0);
               if (totalWeight > 0) {
-                const rand = Math.random() * totalWeight;
-                let cumulative = 0;
+                let rand = Math.random() * totalWeight;
                 for (const c of availableConns) {
-                  cumulative += (c.splitPercent ?? 100);
-                  if (rand <= cumulative) {
+                  rand -= (c.splitPercent || 0);
+                  if (rand <= 0) {
                     conn = c;
                     break;
                   }
@@ -165,24 +200,17 @@ export function runSimulation(
                 });
                 items--;
                 pushesThisMinute++;
-              } else {
-                break;
-              }
-            } else {
-              break; // Blocked
-            }
+              } else break;
+            } else break;
           }
         }
         return;
       }
-
-      // Stations push when progress >= 1
       if (activeUnits[s.id] > 0 && progress[s.id] >= 1) {
         const downstreamConns = connections.filter(c => c.sourceId === s.id && !c.isRework);
-        
         if (downstreamConns.length === 0) {
-          outputsByStation[s.id]++;
-          totalOutput++;
+          outputsByStation[s.id] += activeUnits[s.id];
+          totalOutput += activeUnits[s.id];
           activeUnits[s.id] = 0;
           progress[s.id] = 0;
           isRepairing[s.id] = false;
@@ -193,139 +221,145 @@ export function runSimulation(
             if (target?.type === 'inventory') {
               const currentTargetInv = Object.values(inventory[c.targetId]).reduce((a, b) => a + b, 0);
               const inTransitToTarget = transitUnits.filter(tu => tu.targetId === c.targetId).length;
-              return (currentTargetInv + inTransitToTarget) < (target?.capacity || 100);
+              return (currentTargetInv + inTransitToTarget + activeUnits[s.id]) <= (target?.capacity || 100);
             } else {
               const currentTargetInvFromSource = inventory[c.targetId][s.id] || 0;
               const inTransitToTargetFromSource = transitUnits.filter(tu => tu.targetId === c.targetId && tu.sourceId === s.id).length;
-              return (currentTargetInvFromSource + inTransitToTargetFromSource) < (target?.capacity || 10);
+              return (currentTargetInvFromSource + inTransitToTargetFromSource + activeUnits[s.id]) <= (target?.capacity || 10);
             }
           });
-
           if (availableConns.length > 0) {
-            const totalWeight = availableConns.reduce((sum, c) => sum + (c.splitPercent ?? 100), 0);
-            let conn = availableConns[availableConns.length - 1];
+            // Split logic based on splitPercent
+            let conn = availableConns[0];
+            const totalWeight = availableConns.reduce((acc, c) => acc + (c.splitPercent || 0), 0);
             if (totalWeight > 0) {
-              const rand = Math.random() * totalWeight;
-              let cumulative = 0;
+              let rand = Math.random() * totalWeight;
               for (const c of availableConns) {
-                cumulative += (c.splitPercent ?? 100);
-                if (rand <= cumulative) {
+                rand -= (c.splitPercent || 0);
+                if (rand <= 0) {
                   conn = c;
                   break;
                 }
               }
             }
 
-            outputsByStation[s.id]++;
-            transitUnits.push({
-              id: `unit-${unitCounter++}`,
-              connectionId: conn.id,
-              targetId: conn.targetId,
-              sourceId: s.id,
-              startTime: t,
-              duration: Math.max(1, conn.transitTime || 2)
-            });
+            outputsByStation[s.id] += activeUnits[s.id];
+            for (let i = 0; i < activeUnits[s.id]; i++) {
+              transitUnits.push({
+                id: `unit-${unitCounter++}`,
+                connectionId: conn.id,
+                targetId: conn.targetId,
+                sourceId: s.id,
+                startTime: t,
+                duration: Math.max(1, conn.transitTime || 2)
+              });
+            }
             activeUnits[s.id] = 0;
             progress[s.id] = 0;
             isRepairing[s.id] = false;
           } else {
             blockage[s.id]++;
+            currentStates[s.id] = 'blocked';
           }
         }
       }
     });
 
-    // 2. PULL: Idle stations try to pull from their input queues
-    stations.forEach(s => {
-      if (s.type === 'inventory') return;
-      if (isDown[s.id]) return;
-      if (activeUnits[s.id] > 0) return; // Already working
+    // 2. PULL
+    const missingPartsThisMinute: Record<string, string[]> = {};
 
-      // Priority 1: Rework
+    stations.forEach(s => {
+      if (s.type === 'inventory' || isDown[s.id] || !onShiftStatus[s.id] || activeUnits[s.id] > 0) return;
       if (reworkInventory[s.id] >= 1) {
         reworkInventory[s.id]--;
         activeUnits[s.id] = 1;
         progress[s.id] = 0;
-        const baseCT = s.type === 'machine' ? s.cycleTime / (s.batchSize || 1) : s.cycleTime / (s.fte || 1);
-        
-        // Machines are more consistent (lower variability)
-        const stationVariability = s.type === 'machine' ? variability * 0.3 : variability;
-        const varFactor = 1 + (Math.random() * 2 - 1) * (stationVariability / 100);
-        
-        currentUnitCT[s.id] = Math.max(0.1, baseCT * varFactor);
+        const effectiveFte = (s.fte || 1) * staffingRatio;
+        const baseCT = s.type === 'machine' ? s.cycleTime / (s.batchSize || 1) : s.cycleTime / effectiveFte;
+        currentUnitCT[s.id] = baseCT;
         return;
       }
-
-      // Priority 2: Normal Upstream
-      const upstreamConns = connections.filter(c => c.targetId === s.id && !c.isRework);
       
-      const getGroups = (conns: any[]) => {
-        const groups: Record<string, any[]> = {};
-        conns.forEach(c => {
-          const groupName = c.inputGroup || `_conn_${c.id}`; // unique if no group
-          if (!groups[groupName]) groups[groupName] = [];
-          groups[groupName].push(c);
-        });
-        return groups;
+      const upstreamConns = connections.filter(c => c.targetId === s.id && !c.isRework);
+      const batchSize = s.type === 'machine' ? (s.batchSize || 1) : 1;
+      
+      const hasAvailableParts = (targetId: string, sourceId: string, required: number) => {
+        const sourceStation = stations.find(st => st.id === sourceId);
+        if (sourceStation?.isKanbanSource) return true;
+        return (inventory[targetId][sourceId] || 0) >= required;
       };
 
-      let canPull = false;
-      if (upstreamConns.length === 0) {
-        // Source station
-        canPull = true;
-      } else if (s.flowMode === 'assembly') {
-        // Must have at least one from EACH group
-        const groups = getGroups(upstreamConns);
-        canPull = Object.values(groups).every(groupConns => 
-          groupConns.some(c => inventory[s.id][c.sourceId] >= 1)
-        );
-      } else {
-        // Normal station: pull if ANY upstream has units in our queue
-        canPull = upstreamConns.some(c => inventory[s.id][c.sourceId] >= 1);
-      }
-
-      if (canPull) {
-        if (upstreamConns.length > 0) {
-          if (s.flowMode === 'assembly') {
-            const groups = getGroups(upstreamConns);
-            Object.values(groups).forEach(groupConns => {
-              // Pull from the first connection in the group that has inventory
-              const connToPull = groupConns.find(c => inventory[s.id][c.sourceId] >= 1);
-              if (connToPull) {
-                inventory[s.id][connToPull.sourceId]--;
-              }
-            });
-          } else {
-            // Pull from the first one that has items
-            const conn = upstreamConns.find(c => inventory[s.id][c.sourceId] >= 1);
-            if (conn) inventory[s.id][conn.sourceId]--;
-          }
+      const consumeParts = (targetId: string, sourceId: string, required: number) => {
+        const sourceStation = stations.find(st => st.id === sourceId);
+        if (!sourceStation?.isKanbanSource) {
+          inventory[targetId][sourceId] -= required;
         }
-        
-        activeUnits[s.id] = 1;
-        progress[s.id] = 0;
-        const baseCT = s.type === 'machine' ? s.cycleTime / (s.batchSize || 1) : s.cycleTime / (s.fte || 1);
-        
-        // Machines are more consistent (lower variability)
-        const stationVariability = s.type === 'machine' ? variability * 0.3 : variability;
-        const varFactor = 1 + (Math.random() * 2 - 1) * (stationVariability / 100);
-        
-        currentUnitCT[s.id] = Math.max(0.1, baseCT * varFactor);
+      };
+
+      if (s.flowMode === 'assembly') {
+        // Assembly logic: Need parts from ALL input groups
+        const groups: Record<string, Connection[]> = {};
+        upstreamConns.forEach(c => {
+          const groupKey = c.inputGroup || `default-${c.id}`;
+          if (!groups[groupKey]) groups[groupKey] = [];
+          groups[groupKey].push(c);
+        });
+
+        const missingFromGroups: string[] = [];
+        const canPullAllGroups = Object.entries(groups).every(([groupKey, conns]) => {
+          const hasPart = conns.some(c => hasAvailableParts(s.id, c.sourceId, batchSize));
+          if (!hasPart) {
+            const sourceNames = conns.map(c => stations.find(st => st.id === c.sourceId)?.name || 'Unknown');
+            missingFromGroups.push(...sourceNames);
+          }
+          return hasPart;
+        });
+
+        if (canPullAllGroups) {
+          // Pull one from each group
+          Object.values(groups).forEach(conns => {
+            const conn = conns.find(c => hasAvailableParts(s.id, c.sourceId, batchSize));
+            if (conn) consumeParts(s.id, conn.sourceId, batchSize);
+          });
+          activeUnits[s.id] = batchSize;
+          progress[s.id] = 0;
+          const effectiveFte = (s.fte || 1) * staffingRatio;
+          currentUnitCT[s.id] = s.type === 'machine' ? s.cycleTime : s.cycleTime / effectiveFte;
+          currentStates[s.id] = 'working';
+        } else {
+          if (missingFromGroups.length > 0) {
+            missingPartsThisMinute[s.id] = missingFromGroups;
+          }
+          starvation[s.id]++;
+          currentStates[s.id] = 'starved';
+        }
       } else {
-        starvation[s.id]++;
+        // Additive logic (default): Pull from ANY available upstream connection
+        const canPull = upstreamConns.length === 0 || upstreamConns.some(c => hasAvailableParts(s.id, c.sourceId, batchSize));
+        if (canPull) {
+          if (upstreamConns.length > 0) {
+            const conn = upstreamConns.find(c => hasAvailableParts(s.id, c.sourceId, batchSize));
+            if (conn) consumeParts(s.id, conn.sourceId, batchSize);
+          }
+          activeUnits[s.id] = batchSize;
+          progress[s.id] = 0;
+          const effectiveFte = (s.fte || 1) * staffingRatio;
+          currentUnitCT[s.id] = s.type === 'machine' ? s.cycleTime : s.cycleTime / effectiveFte;
+          currentStates[s.id] = 'working';
+        } else {
+          starvation[s.id]++;
+          currentStates[s.id] = 'starved';
+        }
       }
     });
 
-    // 3. WORK: Advance progress for active stations
+    // 3. WORK
     stations.forEach(s => {
-      if (s.type === 'inventory') return;
-      if (isDown[s.id]) return;
-      
+      if (s.type === 'inventory' || isDown[s.id] || !onShiftStatus[s.id]) return;
       if (activeUnits[s.id] > 0 && progress[s.id] < 1) {
         progress[s.id] += (1 / (currentUnitCT[s.id] || 1));
         utilization[s.id]++;
-
-        // Check for quality failure immediately when finished
+        currentStates[s.id] = 'working';
         if (progress[s.id] >= 1) {
           const quality = s.qualityRate ?? 100;
           if (!isRepairing[s.id] && Math.random() * 100 > quality) {
@@ -348,78 +382,75 @@ export function runSimulation(
       }
     });
 
+    // 3.5 TRACK SHIFT METRICS
+    const shiftId = `${dayIndex}-${currentShift ? daySchedule?.shifts.indexOf(currentShift) : -1}`;
+    if (!shiftMetricsMap[shiftId]) {
+      const dayOfWeek = dayIndex % 7;
+      const weekday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayOfWeek];
+      shiftMetricsMap[shiftId] = {
+        dayIndex,
+        shiftIndex: currentShift ? daySchedule?.shifts.indexOf(currentShift) ?? -1 : -1,
+        shiftName: currentShift ? currentShift.name : "Off Shift",
+        weekday,
+        output: 0,
+        defects: 0,
+        rework: 0
+      };
+    }
+    shiftMetricsMap[shiftId].output += (totalOutput - prevTotalOutput);
+    shiftMetricsMap[shiftId].defects += (totalDefects - prevTotalDefects);
+    shiftMetricsMap[shiftId].rework += (totalRework - prevTotalRework);
+    
+    prevTotalOutput = totalOutput;
+    prevTotalDefects = totalDefects;
+    prevTotalRework = totalRework;
+
     // 4. SNAPSHOT
-    if (t % snapshotInterval === 0 || t === durationMinutes) {
+    if (t % snapshotInterval === 0 || t === endTime) {
+      const minutesInDay = t % 1440;
+      const dayIndex = Math.floor(t / 1440);
+      const dayOfWeek = dayIndex % 7;
+      const weekday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayOfWeek];
+      
+      // Find current shift
+      const daySchedule = settings.schedule?.days[dayOfWeek];
+      let shiftIndex = -1;
+      let shiftName = "Off Shift";
+      let shiftStartTime = "";
+      let shiftEndTime = "";
+      if (daySchedule) {
+        const shift = daySchedule.shifts.find(s => {
+          const start = parseTime(s.startTime);
+          const end = parseTime(s.endTime);
+          
+          let onShift = false;
+          if (start <= end) {
+            onShift = minutesInDay >= start && minutesInDay < end;
+          } else {
+            onShift = minutesInDay >= start || minutesInDay < end;
+          }
+          return onShift;
+        });
+        if (shift) {
+          shiftIndex = daySchedule.shifts.indexOf(shift);
+          shiftName = shift.name;
+          shiftStartTime = shift.startTime;
+          shiftEndTime = shift.endTime;
+        }
+      }
+
       const flatInventory: Record<string, number> = {};
       stations.forEach(st => {
-        if (st.isKanbanSource) {
-          flatInventory[st.id] = 0;
-        } else {
-          flatInventory[st.id] = Object.values(inventory[st.id] || {}).reduce((a, b) => a + b, 0);
-        }
+        flatInventory[st.id] = st.isKanbanSource ? 0 : Object.values(inventory[st.id] || {}).reduce((a, b) => a + b, 0);
       });
-
-      const stationStates: Record<string, StationState> = {};
-      const missingParts: Record<string, string[]> = {};
-
-      stations.forEach(s => {
-        if (s.type === 'inventory') {
-          stationStates[s.id] = 'idle';
-        } else if (isDown[s.id]) {
-          stationStates[s.id] = 'down';
-        } else if (activeUnits[s.id] > 0) {
-          if (progress[s.id] >= 1) {
-            stationStates[s.id] = 'blocked';
-          } else {
-            stationStates[s.id] = 'working';
-          }
-        } else {
-          stationStates[s.id] = 'starved';
-          // Check why it's starved
-          const upstreamConns = connections.filter(c => c.targetId === s.id && !c.isRework);
-          if (upstreamConns.length > 0) {
-            const missing: string[] = [];
-            
-            if (s.flowMode === 'assembly') {
-              const getGroups = (conns: any[]) => {
-                const groups: Record<string, any[]> = {};
-                conns.forEach(c => {
-                  const groupName = c.inputGroup || `_conn_${c.id}`;
-                  if (!groups[groupName]) groups[groupName] = [];
-                  groups[groupName].push(c);
-                });
-                return groups;
-              };
-              
-              const groups = getGroups(upstreamConns);
-              Object.entries(groups).forEach(([groupName, groupConns]) => {
-                const hasAny = groupConns.some(c => (inventory[s.id][c.sourceId] || 0) >= 1);
-                if (!hasAny) {
-                  if (groupName.startsWith('_conn_')) {
-                    const source = stations.find(st => st.id === groupConns[0].sourceId);
-                    missing.push(source?.name || 'Unknown Source');
-                  } else {
-                    missing.push(`Group: ${groupName}`);
-                  }
-                }
-              });
-            } else {
-              const hasAny = upstreamConns.some(c => (inventory[s.id][c.sourceId] || 0) >= 1);
-              if (!hasAny) {
-                missing.push('Any Input');
-              }
-            }
-
-            if (missing.length > 0) {
-              missingParts[s.id] = missing;
-            }
-          }
-        }
-      });
-
       const snapshotUnits: { id: string, stationId?: string, connectionId?: string, progress: number }[] = [];
-      
-      // Units at stations
+      transitUnits.forEach(tu => {
+        snapshotUnits.push({
+          id: tu.id,
+          connectionId: tu.connectionId,
+          progress: (t - tu.startTime) / tu.duration
+        });
+      });
       stations.forEach(s => {
         if (activeUnits[s.id] > 0) {
           snapshotUnits.push({
@@ -430,57 +461,57 @@ export function runSimulation(
         }
       });
 
-      // Units in transit
-      transitUnits.forEach(tu => {
-        snapshotUnits.push({
-          id: tu.id,
-          connectionId: tu.connectionId,
-          progress: (t - tu.startTime) / tu.duration
-        });
-      });
-
       snapshots.push({
         time: t,
+        dayIndex,
+        shiftIndex,
+        shiftName,
+        shiftStartTime,
+        shiftEndTime,
+        weekday,
         output: totalOutput,
         defects: totalDefects,
         rework: totalRework,
         inventory: flatInventory,
-        stationOutputs: { ...outputsByStation },
-        wip: Object.values(flatInventory).reduce((a, b) => a + b, 0) + 
-             Object.values(reworkInventory).reduce((a, b) => a + b, 0) +
-             Object.values(activeUnits).reduce((a, b) => a + b, 0) +
-             transitUnits.length,
-        stationStates,
-        missingParts,
+        stationOutputs: outputsByStation,
+        wip: Object.values(flatInventory).reduce((a, b) => a + b, 0),
+        stationStates: currentStates,
+        staffingRatio,
+        missingParts: missingPartsThisMinute,
         units: snapshotUnits
       });
     }
   }
 
-  // Calculate final percentages and flatten inventory
+  // Sort shift metrics chronologically
+  const shiftMetrics = Object.values(shiftMetricsMap).sort((a, b) => {
+    if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
+    return a.shiftIndex - b.shiftIndex;
+  });
+
   const stationUtilization: Record<string, number> = {};
   const starvationTime: Record<string, number> = {};
   const blockageTime: Record<string, number> = {};
-  const finalFlatInventory: Record<string, number> = {};
 
   stations.forEach(s => {
-    stationUtilization[s.id] = (utilization[s.id] / durationMinutes) * 100;
-    starvationTime[s.id] = (starvation[s.id] / durationMinutes) * 100;
-    blockageTime[s.id] = (blockage[s.id] / durationMinutes) * 100;
-    finalFlatInventory[s.id] = Object.values(inventory[s.id] || {}).reduce((a, b) => a + b, 0);
+    const totalAvailable = availableMinutes[s.id] || 1;
+    stationUtilization[s.id] = (utilization[s.id] / totalAvailable) * 100;
+    starvationTime[s.id] = (starvation[s.id] / totalAvailable) * 100;
+    blockageTime[s.id] = (blockage[s.id] / totalAvailable) * 100;
   });
 
   return {
-    snapshots,
     totalOutput,
-    totalDefects,
     totalRework,
-    finalInventory: finalFlatInventory,
+    totalDefects,
+    outputsByStation,
+    reworkByStation,
+    defectsByStation,
+    snapshots,
+    finalInventory: {}, 
     stationUtilization,
     starvationTime,
     blockageTime,
-    defectsByStation,
-    reworkByStation,
-    outputsByStation
+    shiftMetrics
   };
 }

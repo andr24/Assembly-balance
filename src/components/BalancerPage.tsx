@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { AssemblyLine, GlobalSettings } from '../types';
-import { balanceLines, BalancerResult } from '../utils/balancer';
-import { Users, Target, Clock, Play, Download, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { balanceLines, BalancerResult, BalancingStrategy } from '../utils/balancer';
+import { Users, Target, Clock, Play, Download, ArrowLeft, CheckCircle2, Scale, Zap } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Cell } from 'recharts';
 import { TooltipWrapper } from './TooltipWrapper';
@@ -24,6 +24,7 @@ export function BalancerPage({ lines, settings, onBack, onApply }: BalancerPageP
   const [baselineResult, setBaselineResult] = useState<BalancerResult | null>(null);
   const [laborCost, setLaborCost] = useState<number>(25);
   const [productValue, setProductValue] = useState<number>(100);
+  const [strategy, setStrategy] = useState<BalancingStrategy>('efficiency');
 
   const handleToggleLine = (id: string) => {
     const newSet = new Set(selectedLineIds);
@@ -50,7 +51,8 @@ export function BalancerPage({ lines, settings, onBack, onApply }: BalancerPageP
       const lineResult = balanceLines([line], {
         totalFtePool: lineFte,
         demand,
-        availableHours
+        availableHours,
+        strategy
       });
       
       optimizedLines.push(lineResult.lines[0]);
@@ -203,6 +205,40 @@ export function BalancerPage({ lines, settings, onBack, onApply }: BalancerPageP
                   </div>
                 ))}
               </div>
+            </section>
+
+            {/* Balancing Strategy */}
+            <section>
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Balancing Strategy</h2>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setStrategy('efficiency')}
+                  className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
+                    strategy === 'efficiency'
+                      ? 'bg-blue-50 border-blue-200 text-blue-700'
+                      : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  <Zap size={20} />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Efficiency</span>
+                </button>
+                <button
+                  onClick={() => setStrategy('equalize')}
+                  className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
+                    strategy === 'equalize'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                      : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  <Scale size={20} />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Equalize</span>
+                </button>
+              </div>
+              <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
+                {strategy === 'efficiency' 
+                  ? 'Stops adding workers once target demand is met to minimize labor cost.' 
+                  : 'Distributes all available workers to equalize workload and reduce stress.'}
+              </p>
             </section>
 
             {/* ROI Calculator */}
@@ -506,15 +542,15 @@ export function BalancerPage({ lines, settings, onBack, onApply }: BalancerPageP
                                         </div>
                                         <div>
                                           <span className="text-slate-400">Min W:</span>
-                                          <span className="ml-1 font-mono font-bold text-slate-700">{s.minWorkersRequired || 1}</span>
+                                          <span className="ml-1 font-mono font-bold text-slate-700">{s.minFteRequired || 1}</span>
                                         </div>
                                         <div>
                                           <span className="text-slate-400">Max W:</span>
-                                          <span className="ml-1 font-mono font-bold text-slate-700">{s.maxWorkersAllowed || '∞'}</span>
+                                          <span className="ml-1 font-mono font-bold text-slate-700">{s.maxFteAllowed || '∞'}</span>
                                         </div>
                                         <div>
                                           <span className="text-slate-400">Trained:</span>
-                                          <span className="ml-1 font-mono font-bold text-slate-700">{s.trainedWorkersAvailable || '∞'}</span>
+                                          <span className="ml-1 font-mono font-bold text-slate-700">{s.trainedFteAvailable || '∞'}</span>
                                         </div>
                                       </>
                                     )}

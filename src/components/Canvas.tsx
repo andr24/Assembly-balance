@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { MousePointer2, Link2, Plus, Trash2, RefreshCw, AlertCircle, Box, User, Cpu, Package } from 'lucide-react';
-import { Station, Connection, Metrics, GlobalSettings } from '../types';
+import { MousePointer2, Link2, Plus, Trash2, RefreshCw, AlertCircle, Box, User, Cpu, Package, LayoutDashboard } from 'lucide-react';
+import { Station, Connection, Metrics, GlobalSettings, Group } from '../types';
 import { STATION_WIDTH, STATION_HEIGHT, INVENTORY_WIDTH, INVENTORY_HEIGHT } from '../constants';
 import { cn } from '../lib/utils';
 import { MiniMap } from './MiniMap';
@@ -10,12 +10,15 @@ import { TooltipWrapper } from './TooltipWrapper';
 interface CanvasProps {
   stations: Station[];
   connections: Connection[];
+  groups: Group[];
   metrics: Metrics;
   settings: GlobalSettings;
-  selectedId: string | null;
-  setSelectedId: (id: string | null) => void;
+  selectedStationIds: string[];
+  setSelectedStationIds: React.Dispatch<React.SetStateAction<string[]>>;
+  selectedGroupId: string | null;
+  setSelectedGroupId: React.Dispatch<React.SetStateAction<string | null>>;
   selectedConnId: string | null;
-  setSelectedConnId: (id: string | null) => void;
+  setSelectedConnId: React.Dispatch<React.SetStateAction<string | null>>;
   isConnecting: boolean;
   setIsConnecting: (b: boolean) => void;
   connectSourceId: string | null;
@@ -26,15 +29,21 @@ interface CanvasProps {
   duplicateStation: (station: Station) => string;
   updateStation: (id: string, updates: Partial<Station>) => void;
   updateConnection: (id: string, updates: Partial<Connection>) => void;
+  updateGroup: (id: string, updates: Partial<Group>) => void;
+  deleteGroup: (id: string) => void;
+  addGroup: (stationIds: string[]) => void;
 }
 
 export function Canvas({
   stations,
   connections,
+  groups,
   metrics,
   settings,
-  selectedId,
-  setSelectedId,
+  selectedStationIds,
+  setSelectedStationIds,
+  selectedGroupId,
+  setSelectedGroupId,
   selectedConnId,
   setSelectedConnId,
   isConnecting,
@@ -46,7 +55,10 @@ export function Canvas({
   onDelete,
   duplicateStation,
   updateStation,
-  updateConnection
+  updateConnection,
+  updateGroup,
+  deleteGroup,
+  addGroup
 }: CanvasProps) {
   const canvasRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -59,6 +71,47 @@ export function Canvas({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [resizingGroup, setResizingGroup] = useState<{ id: string, initialWidth: number, initialHeight: number, initialX: number, initialY: number } | null>(null);
+
+  const handleResizeStart = (e: React.MouseEvent, group: Group) => {
+    e.stopPropagation();
+    setResizingGroup({
+      id: group.id,
+      initialWidth: group.width,
+      initialHeight: group.height,
+      initialX: e.clientX,
+      initialY: e.clientY
+    });
+  };
+
+  const handleResizeMove = (e: MouseEvent) => {
+    if (!resizingGroup) return;
+    const dx = (e.clientX - resizingGroup.initialX) / zoom;
+    const dy = (e.clientY - resizingGroup.initialY) / zoom;
+    
+    updateGroup(resizingGroup.id, {
+      width: Math.max(50, resizingGroup.initialWidth + dx),
+      height: Math.max(50, resizingGroup.initialHeight + dy)
+    });
+  };
+
+  const handleResizeEnd = () => {
+    setResizingGroup(null);
+  };
+
+  React.useEffect(() => {
+    if (resizingGroup) {
+      window.addEventListener('mousemove', handleResizeMove);
+      window.addEventListener('mouseup', handleResizeEnd);
+    } else {
+      window.removeEventListener('mousemove', handleResizeMove);
+      window.removeEventListener('mouseup', handleResizeEnd);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleResizeMove);
+      window.removeEventListener('mouseup', handleResizeEnd);
+    };
+  }, [resizingGroup]);
   const [hasMoved, setHasMoved] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
@@ -85,8 +138,8 @@ export function Canvas({
       }
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (selectedId) {
-          const station = stations.find(s => s.id === selectedId);
+        if (selectedStationIds.length > 0) {
+          const station = stations.find(s => s.id === selectedStationIds[0]);
           if (station) setClipboard(station);
         }
       }
@@ -94,7 +147,7 @@ export function Canvas({
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         if (clipboard) {
           const newId = duplicateStation(clipboard);
-          setSelectedId(newId);
+          setSelectedStationIds([newId]);
           setSelectedConnId(null);
         }
       }
@@ -102,11 +155,12 @@ export function Canvas({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, selectedConnId, onDelete, stations, clipboard, duplicateStation, setSelectedId, setSelectedConnId]);
+  }, [selectedStationIds, selectedConnId, onDelete, stations, clipboard, duplicateStation, setSelectedStationIds, setSelectedConnId]);
 
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (hasMoved) return;
-    setSelectedId(null);
+    setSelectedStationIds([]);
+    setSelectedGroupId(null);
     setSelectedConnId(null);
     setIsConnecting(false);
     setConnectSourceId(null);
@@ -135,8 +189,17 @@ export function Canvas({
       }
       return;
     }
-    setSelectedId(id);
-    setSelectedConnId(null);
+
+    if (e.shiftKey) {
+      setSelectedStationIds(prev => prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]);
+      setSelectedGroupId(null);
+      setSelectedConnId(null);
+    } else {
+      setSelectedStationIds([id]);
+      setSelectedGroupId(null);
+      setSelectedConnId(null);
+    }
+    
     setIsDragging(true);
     const s = stations.find(st => st.id === id)!;
     const worldPos = screenToWorld(e.clientX, e.clientY);
@@ -165,11 +228,16 @@ export function Canvas({
       return;
     }
 
-    if (isDragging && selectedId) {
+    if (isDragging && selectedStationIds.length > 0) {
       const worldPos = screenToWorld(e.clientX, e.clientY);
-      updateStation(selectedId, {
-        x: Math.max(0, worldPos.x - dragOffset.x),
-        y: Math.max(0, worldPos.y - dragOffset.y)
+      selectedStationIds.forEach(id => {
+        const s = stations.find(st => st.id === id);
+        if (s) {
+          updateStation(id, {
+            x: Math.max(0, worldPos.x - dragOffset.x),
+            y: Math.max(0, worldPos.y - dragOffset.y)
+          });
+        }
       });
     } else if (dragWaypoint) {
       const worldPos = screenToWorld(e.clientX, e.clientY);
@@ -319,11 +387,19 @@ export function Canvas({
         </div>
         <button 
           onClick={onDelete}
-          disabled={!selectedId && !selectedConnId}
+          disabled={(selectedStationIds.length === 0 && !selectedConnId && !selectedGroupId) || !!selectedGroupId}
           className="flex items-center gap-2 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:hover:bg-white px-3 py-2 rounded-lg font-medium transition-all shadow-xl border border-slate-200"
         >
           <Trash2 size={18} />
           <span className="text-xs font-bold uppercase tracking-wider">Delete</span>
+        </button>
+        <button 
+          onClick={() => addGroup(selectedStationIds)}
+          disabled={selectedStationIds.length === 0}
+          className="flex items-center gap-2 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white px-3 py-2 rounded-lg font-medium transition-all shadow-xl border border-slate-200"
+        >
+          <LayoutDashboard size={18} />
+          <span className="text-xs font-bold uppercase tracking-wider">Group</span>
         </button>
       </div>
 
@@ -389,6 +465,27 @@ export function Canvas({
         </div>
       </div>
 
+      {/* Heatmap Legend */}
+      {settings.showHeatmap && (
+        <div className="absolute bottom-6 right-6 bg-white/90 backdrop-blur-sm p-3 rounded-xl border border-slate-200 shadow-xl z-10 space-y-2">
+          <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-1">Utilization</h4>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-red-100 border border-red-500" />
+              <span className="text-[10px] font-bold text-slate-600">&gt; 95% (Critical)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-yellow-100 border border-yellow-500" />
+              <span className="text-[10px] font-bold text-slate-600">80-95% (High)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-green-100 border border-green-500" />
+              <span className="text-[10px] font-bold text-slate-600">&lt; 80% (Balanced)</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <MiniMap 
         stations={stations} 
         connections={connections} 
@@ -425,9 +522,6 @@ export function Canvas({
             <marker id="arrowhead-selected" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse">
               <path d="M 0 0 L 8 3 L 0 6 L 2 3 Z" fill="#2563eb" />
             </marker>
-            <marker id="arrowhead-critical" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse">
-              <path d="M 0 0 L 8 3 L 0 6 L 2 3 Z" fill="#f59e0b" />
-            </marker>
             
             {/* Mid-path markers for flow direction */}
             <marker id="flow-arrow" markerWidth="6" markerHeight="4" refX="3" refY="2" orient="auto" markerUnits="userSpaceOnUse">
@@ -435,9 +529,6 @@ export function Canvas({
             </marker>
             <marker id="flow-arrow-selected" markerWidth="6" markerHeight="4" refX="3" refY="2" orient="auto" markerUnits="userSpaceOnUse">
               <path d="M 0 0 L 6 2 L 0 4 L 1.5 2 Z" fill="#3b82f6" fillOpacity="0.8" />
-            </marker>
-            <marker id="flow-arrow-critical" markerWidth="6" markerHeight="4" refX="3" refY="2" orient="auto" markerUnits="userSpaceOnUse">
-              <path d="M 0 0 L 6 2 L 0 4 L 1.5 2 Z" fill="#fbbf24" fillOpacity="0.8" />
             </marker>
             <marker id="flow-arrow-rework" markerWidth="6" markerHeight="4" refX="3" refY="2" orient="auto" markerUnits="userSpaceOnUse">
               <path d="M 0 0 L 6 2 L 0 4 L 1.5 2 Z" fill="#f87171" fillOpacity="0.8" />
@@ -450,13 +541,39 @@ export function Canvas({
             </pattern>
             <rect id="grid-bg" x="-10000" y="-10000" width="20000" height="20000" fill="url(#grid)" />
 
+            {groups.map(g => (
+              <g key={g.id} transform={`translate(${g.x}, ${g.y})`}>
+                <rect
+                  width={g.width}
+                  height={g.height}
+                  rx="12"
+                  fill="#f8fafc"
+                  stroke={selectedGroupId === g.id ? "#2563eb" : "#cbd5e1"}
+                  strokeWidth={selectedGroupId === g.id ? "2" : "2"}
+                  strokeDasharray="4 4"
+                  onClick={(e) => { e.stopPropagation(); setSelectedGroupId(g.id); setSelectedStationIds([]); setSelectedConnId(null); }}
+                />
+                <text x="10" y="20" className="text-xs font-bold fill-slate-500">{g.name}</text>
+                
+                {/* Resize Handle */}
+                <rect
+                  x={g.width - 12}
+                  y={g.height - 12}
+                  width="12"
+                  height="12"
+                  fill="#cbd5e1"
+                  className="cursor-nwse-resize"
+                  onMouseDown={(e) => handleResizeStart(e, g)}
+                />
+              </g>
+            ))}
+
           {connections.map(conn => {
             const source = stations.find(s => s.id === conn.sourceId);
             const target = stations.find(s => s.id === conn.targetId);
             if (!source || !target) return null;
 
             const isSelected = selectedConnId === conn.id;
-            const isCritical = metrics.criticalPathConnectionIds.includes(conn.id);
             
             const sourceWidth = source.type === 'inventory' ? INVENTORY_WIDTH : STATION_WIDTH;
             const sourceHeight = source.type === 'inventory' ? INVENTORY_HEIGHT : STATION_HEIGHT;
@@ -571,15 +688,15 @@ export function Canvas({
               : startY;
 
             return (
-              <g key={conn.id} onClick={(e) => { e.stopPropagation(); setSelectedConnId(conn.id); setSelectedId(null); }}>
+              <g key={conn.id} onClick={(e) => { e.stopPropagation(); setSelectedConnId(conn.id); setSelectedStationIds([]); }}>
                 <path 
                   d={pathData}
                   fill="none"
-                  stroke={isSelected ? "#2563eb" : (isCritical ? "#f59e0b" : (conn.isRework ? "#ef4444" : "#64748b"))}
-                  strokeWidth={isSelected ? 4 : (isCritical ? 4 : 2)}
+                  stroke={isSelected ? "#2563eb" : (conn.isRework ? "#ef4444" : "#64748b")}
+                  strokeWidth={isSelected ? 4 : 2}
                   strokeDasharray={conn.isRework ? "5,5" : "none"}
-                  markerEnd={isSelected ? "url(#arrowhead-selected)" : (isCritical ? "url(#arrowhead-critical)" : (conn.isRework ? "url(#arrowhead-rework)" : "url(#arrowhead)"))}
-                  markerMid={isSelected ? "url(#flow-arrow-selected)" : (isCritical ? "url(#flow-arrow-critical)" : (conn.isRework ? "url(#flow-arrow-rework)" : "url(#flow-arrow)"))}
+                  markerEnd={isSelected ? "url(#arrowhead-selected)" : (conn.isRework ? "url(#arrowhead-rework)" : "url(#arrowhead)")}
+                  markerMid={isSelected ? "url(#flow-arrow-selected)" : (conn.isRework ? "url(#flow-arrow-rework)" : "url(#flow-arrow)")}
                   className="cursor-pointer transition-all hover:stroke-blue-400"
                 />
                 {!conn.isRework && (
@@ -663,13 +780,48 @@ export function Canvas({
           })}
 
           {stations.map(s => {
-            const isSelected = selectedId === s.id;
+            const isSelected = selectedStationIds.includes(s.id);
             const isBottleneck = s.id === metrics.bottleneckStationId;
-            const isCritical = metrics.criticalPathStationIds.includes(s.id);
             const isInventory = s.type === 'inventory';
             const isMachine = s.type === 'machine';
             const width = isInventory ? INVENTORY_WIDTH : STATION_WIDTH;
             const height = isInventory ? INVENTORY_HEIGHT : STATION_HEIGHT;
+
+            // Heatmap calculation
+            let utilization = 0;
+            let heatmapColor = "white";
+            let heatmapStroke = isSelected ? "#2563eb" : (isBottleneck ? "#f97316" : "#cbd5e1");
+
+            if (!isInventory && settings.showHeatmap && metrics.systemTakt > 0) {
+              const learningFactor = (s.learningCurve || 100) / 100;
+              const setupPerUnit = (s.setupTime || 0) / (s.batchSize || 1);
+              const handlingTime = (s.materialHandlingTime || 0);
+              const fte = s.fte || 1;
+              
+              const effectiveCT = isMachine 
+                ? (s.cycleTime / (s.batchSize || 1)) + setupPerUnit + handlingTime
+                : (s.cycleTime / (fte * learningFactor)) + setupPerUnit + handlingTime;
+              
+              const flowFactor = metrics.flowFactors?.[s.id] || 0;
+              const load = effectiveCT * flowFactor;
+              utilization = (load / metrics.systemTakt) * 100;
+
+              if (utilization > 95) {
+                heatmapColor = "#fee2e2"; // Red-100
+                heatmapStroke = "#ef4444"; // Red-500
+              } else if (utilization > 80) {
+                heatmapColor = "#fef9c3"; // Yellow-100
+                heatmapStroke = "#eab308"; // Yellow-500
+              } else {
+                heatmapColor = "#dcfce7"; // Green-100
+                heatmapStroke = "#22c55e"; // Green-500
+              }
+              
+              if (isSelected) heatmapStroke = "#2563eb";
+            } else if (isBottleneck && !isInventory) {
+              heatmapColor = "#fff7ed";
+              heatmapStroke = isSelected ? "#2563eb" : "#f97316";
+            }
 
             return (
               <g 
@@ -683,8 +835,8 @@ export function Canvas({
                   <path 
                     d={`M 0 0 L ${width} 0 L ${width/2} ${height} Z`}
                     fill="white"
-                    stroke={isSelected ? "#2563eb" : (isCritical ? "#f59e0b" : "#cbd5e1")}
-                    strokeWidth={isSelected || isCritical ? 3 : 2}
+                    stroke={isSelected ? "#2563eb" : "#cbd5e1"}
+                    strokeWidth={isSelected ? 3 : 2}
                     className="shadow-sm transition-all"
                   />
                 ) : isMachine ? (
@@ -692,9 +844,9 @@ export function Canvas({
                     width={width} 
                     height={height} 
                     rx="4"
-                    fill={isBottleneck ? "#fff7ed" : "white"}
-                    stroke={isSelected ? "#9333ea" : (isCritical ? "#f59e0b" : (isBottleneck ? "#f97316" : "#d8b4fe"))}
-                    strokeWidth={isSelected || isCritical || isBottleneck ? 4 : 2}
+                    fill={heatmapColor}
+                    stroke={isMachine && isSelected ? "#9333ea" : heatmapStroke}
+                    strokeWidth={isSelected || isBottleneck ? 4 : 2}
                     className="shadow-sm transition-all"
                   />
                 ) : (
@@ -702,9 +854,9 @@ export function Canvas({
                     width={width} 
                     height={height} 
                     rx="8"
-                    fill={isBottleneck ? "#fff7ed" : "white"}
-                    stroke={isSelected ? "#2563eb" : (isCritical ? "#f59e0b" : (isBottleneck ? "#f97316" : "#cbd5e1"))}
-                    strokeWidth={isSelected || isCritical || isBottleneck ? 4 : 2}
+                    fill={heatmapColor}
+                    stroke={heatmapStroke}
+                    strokeWidth={isSelected || isBottleneck ? 4 : 2}
                     className="shadow-sm transition-all"
                   />
                 )}
@@ -886,11 +1038,37 @@ export function Canvas({
                   <>
                     <text x="12" y="44" className="text-[10px] uppercase tracking-wider font-semibold fill-slate-400">Load / Flow</text>
                     <text x="12" y="62" className="text-lg font-mono font-bold fill-slate-700">
-                      {((s.cycleTime / (isMachine ? (s.batchSize || 1) : s.fte)) * (metrics.flowFactors?.[s.id] || 0)).toFixed(1)}m
+                      {(() => {
+                        const learningFactor = (s.learningCurve || 100) / 100;
+                        const setupPerUnit = (s.setupTime || 0) / (s.batchSize || 1);
+                        const handlingTime = (s.materialHandlingTime || 0);
+                        const fte = s.fte || 1;
+                        const effectiveCT = isMachine 
+                          ? (s.cycleTime / (s.batchSize || 1)) + setupPerUnit + handlingTime
+                          : (s.cycleTime / (fte * learningFactor)) + setupPerUnit + handlingTime;
+                        return (effectiveCT * (metrics.flowFactors?.[s.id] || 0)).toFixed(1);
+                      })()}m
                     </text>
-                    <text x="12" y="72" className="text-[9px] font-mono fill-slate-400">
-                      {((metrics.flowFactors?.[s.id] || 0) * 100).toFixed(0)}% flow
-                    </text>
+                    <div className="flex items-center gap-2">
+                      <text x="12" y="72" className="text-[9px] font-mono fill-slate-400">
+                        {((metrics.flowFactors?.[s.id] || 0) * 100).toFixed(0)}% flow
+                      </text>
+                      {settings.showHeatmap && metrics.systemTakt > 0 && (
+                        <text x={width - 12} y="72" textAnchor="end" className="text-[9px] font-mono font-bold fill-slate-500">
+                          {(() => {
+                            const learningFactor = (s.learningCurve || 100) / 100;
+                            const setupPerUnit = (s.setupTime || 0) / (s.batchSize || 1);
+                            const handlingTime = (s.materialHandlingTime || 0);
+                            const fte = s.fte || 1;
+                            const effectiveCT = isMachine 
+                              ? (s.cycleTime / (s.batchSize || 1)) + setupPerUnit + handlingTime
+                              : (s.cycleTime / (fte * learningFactor)) + setupPerUnit + handlingTime;
+                            const load = effectiveCT * (metrics.flowFactors?.[s.id] || 0);
+                            return ((load / metrics.systemTakt) * 100).toFixed(0);
+                          })()}% util
+                        </text>
+                      )}
+                    </div>
                   </>
                 ) : (
                   <g transform={`translate(0, 15)`}>
@@ -939,36 +1117,6 @@ export function Canvas({
         <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-slate-200 p-4 z-10 pointer-events-none shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
           <div className="pointer-events-auto overflow-x-auto pb-2">
             
-            {/* Critical Path Flow */}
-            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Critical Path Flow</h3>
-            <div className="flex items-center gap-0 mb-6 min-w-max px-2">
-              {metrics.criticalPathStationIds.map((id, index) => {
-                const station = stations.find(s => s.id === id);
-                if (!station) return null;
-                const isInv = station.type === 'inventory';
-                
-                return (
-                  <React.Fragment key={`cp-${id}`}>
-                    <div className={`flex flex-col items-center justify-center min-w-[80px] h-12 px-3 rounded-lg border-2 ${
-                      isInv 
-                        ? 'bg-orange-50 border-orange-200 text-orange-700' 
-                        : 'bg-blue-50 border-blue-200 text-blue-700'
-                    }`}>
-                      <span className="text-[10px] font-bold text-center leading-tight">{station.name}</span>
-                      <span className="text-[9px] font-mono opacity-75 mt-0.5">
-                        {isInv ? 'Wait' : 'Process'}
-                      </span>
-                    </div>
-                    {index < metrics.criticalPathStationIds.length - 1 && (
-                      <div className="w-8 h-0.5 bg-slate-300 relative">
-                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 border-t-2 border-r-2 border-slate-300 rotate-45" />
-                      </div>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </div>
-
             {/* VSM Lead Time Timeline (Saw) */}
             <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Value Stream Timeline</h3>
             <div className="min-w-max px-2">

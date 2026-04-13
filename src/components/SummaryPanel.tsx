@@ -2,7 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Cell } from 'recharts';
 import { Metrics, Station, GlobalSettings, Connection } from '../types';
 import { MetricCard } from './MetricCard';
-import { AlertCircle, Info, BarChart2, Hash } from 'lucide-react';
+import { AlertCircle, Info, BarChart2, Hash, Sparkles, Loader2, Database } from 'lucide-react';
+import { getSimulationInsights, getBufferSuggestions } from '../services/aiService';
+import ReactMarkdown from 'react-markdown';
 
 interface SummaryPanelProps {
   metrics: Metrics;
@@ -13,7 +15,37 @@ interface SummaryPanelProps {
 }
 
 export function SummaryPanel({ metrics, stations, connections, settings, height }: SummaryPanelProps) {
-  const [activeTab, setActiveTab] = useState<'balance' | 'histogram'>('balance');
+  const [activeTab, setActiveTab] = useState<'balance' | 'histogram' | 'ai' | 'buffers'>('balance');
+  const [insights, setInsights] = useState<string | null>(null);
+  const [bufferSuggestions, setBufferSuggestions] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingBuffers, setIsGeneratingBuffers] = useState(false);
+
+  const handleGenerateInsights = async () => {
+    setIsGenerating(true);
+    setActiveTab('ai');
+    try {
+      const result = await getSimulationInsights(stations, connections, metrics, settings);
+      setInsights(result);
+    } catch (error) {
+      setInsights("Failed to generate insights. Please try again.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleGenerateBufferSuggestions = async () => {
+    setIsGeneratingBuffers(true);
+    setActiveTab('buffers');
+    try {
+      const result = await getBufferSuggestions(stations, connections, metrics, settings);
+      setBufferSuggestions(result);
+    } catch (error) {
+      setBufferSuggestions("Failed to generate buffer suggestions. Please try again.");
+    } finally {
+      setIsGeneratingBuffers(false);
+    }
+  };
   const chartData = stations.map(s => {
     const flowFactor = metrics.flowFactors?.[s.id] || 0;
     const effectiveCT = s.type === 'machine' ? s.cycleTime / (s.batchSize || 1) : s.cycleTime / s.fte;
@@ -161,6 +193,28 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
                 <Hash size={14} />
                 CT Distribution
               </button>
+              <button
+                onClick={() => setActiveTab('ai')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  activeTab === 'ai' 
+                    ? 'bg-white text-emerald-600 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Sparkles size={14} />
+                AI Insights
+              </button>
+              <button
+                onClick={() => setActiveTab('buffers')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  activeTab === 'buffers' 
+                    ? 'bg-white text-amber-600 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Database size={14} />
+                Buffer Suggestions
+              </button>
             </div>
 
             {activeTab === 'balance' && (
@@ -221,7 +275,7 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            ) : (
+            ) : activeTab === 'histogram' ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={histogramData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -249,6 +303,78 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
                   <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={60} />
                 </BarChart>
               </ResponsiveContainer>
+            ) : activeTab === 'ai' ? (
+              <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
+                {isGenerating ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3">
+                    <Loader2 className="animate-spin text-emerald-500" size={32} />
+                    <p className="text-sm font-bold animate-pulse">Analyzing simulation results...</p>
+                  </div>
+                ) : insights ? (
+                  <div className="prose prose-sm prose-slate max-w-none">
+                    <ReactMarkdown>{insights}</ReactMarkdown>
+                    <button 
+                      onClick={handleGenerateInsights}
+                      className="mt-6 flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-[10px] font-bold uppercase tracking-widest transition-colors"
+                    >
+                      <Sparkles size={14} />
+                      Refresh Insights
+                    </button>
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4">
+                    <div className="p-4 bg-emerald-50 rounded-full">
+                      <Sparkles className="text-emerald-500" size={32} />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-bold text-slate-600">AI-Powered Analysis</p>
+                      <p className="text-xs text-slate-400 mt-1">Get expert suggestions to optimize your production line.</p>
+                    </div>
+                    <button 
+                      onClick={handleGenerateInsights}
+                      className="bg-emerald-600 text-white px-6 py-2 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
+                    >
+                      Generate Insights
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
+                {isGeneratingBuffers ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3">
+                    <Loader2 className="animate-spin text-amber-500" size={32} />
+                    <p className="text-sm font-bold animate-pulse">Calculating buffer optimizations...</p>
+                  </div>
+                ) : bufferSuggestions ? (
+                  <div className="prose prose-sm prose-slate max-w-none">
+                    <ReactMarkdown>{bufferSuggestions}</ReactMarkdown>
+                    <button 
+                      onClick={handleGenerateBufferSuggestions}
+                      className="mt-6 flex items-center gap-2 text-amber-600 hover:text-amber-700 text-[10px] font-bold uppercase tracking-widest transition-colors"
+                    >
+                      <Database size={14} />
+                      Recalculate Buffers
+                    </button>
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-4">
+                    <div className="p-4 bg-amber-50 rounded-full">
+                      <Database className="text-amber-500" size={32} />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-bold text-slate-600">Buffer Optimization Suggester</p>
+                      <p className="text-xs text-slate-400 mt-1">AI-driven analysis to minimize impact of breakdowns.</p>
+                    </div>
+                    <button 
+                      onClick={handleGenerateBufferSuggestions}
+                      className="bg-amber-600 text-white px-6 py-2 rounded-xl text-xs font-bold hover:bg-amber-700 transition-all shadow-lg shadow-amber-200"
+                    >
+                      Analyze Buffers
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -278,13 +404,21 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
 
           <div>
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Improvements</h3>
-            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-[10px] text-slate-600 space-y-2">
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-[10px] text-slate-600 space-y-3">
               {metrics.bottleneckStationId ? (
                 <p>Optimize bottleneck: <span className="font-bold text-amber-600">{stations.find(s => s.id === metrics.bottleneckStationId)?.name}</span></p>
               ) : (
                 <p>Line is well balanced.</p>
               )}
               {metrics.lineEfficiency < 80 && <p>Efficiency low: Consider rebalancing.</p>}
+              
+              <button 
+                onClick={handleGenerateInsights}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 py-2 rounded-lg text-[10px] font-bold hover:bg-emerald-100 transition-colors border border-emerald-100"
+              >
+                <Sparkles size={12} />
+                AI Analysis
+              </button>
             </div>
           </div>
 
