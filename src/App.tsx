@@ -52,14 +52,13 @@ export default function App() {
   const [summaryHeight, setSummaryHeight] = useState(256);
   const [isResizing, setIsResizing] = useState(false);
   const [currentView, setCurrentView] = useState<'editor' | 'balancer' | 'simulator'>('editor');
-  const [showProperties, setShowProperties] = useState(true);
+  const [showProperties, setShowProperties] = useState(false);
 
-  // Initialize showProperties based on screen size
+  // Auto-toggle properties panel based on selection
   React.useEffect(() => {
-    if (window.innerWidth < 1024) {
-      setShowProperties(false);
-    }
-  }, []);
+    const hasSelection = !!(selectedStationIds.length > 0 || selectedGroupId || selectedConnId);
+    setShowProperties(hasSelection);
+  }, [selectedStationIds, selectedGroupId, selectedConnId]);
 
   // --- Handlers ---
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -286,12 +285,6 @@ export default function App() {
             addGroup={addGroup}
           />
           
-          <button 
-            onClick={() => setShowProperties(!showProperties)}
-            className="absolute right-4 top-4 z-30 lg:hidden bg-white shadow-lg p-2 rounded-full border border-slate-200 text-blue-600"
-          >
-            <Settings2 size={24} />
-          </button>
         </div>
 
         <motion.div 
@@ -323,7 +316,11 @@ export default function App() {
               setSelectedStationIds={setSelectedStationIds}
               setSelectedGroupId={setSelectedGroupId}
               setSelectedConnId={setSelectedConnId}
-              onClose={() => setShowProperties(false)}
+              onClose={() => {
+                setSelectedStationIds([]);
+                setSelectedGroupId(null);
+                setSelectedConnId(null);
+              }}
             />
           </div>
         </motion.div>
