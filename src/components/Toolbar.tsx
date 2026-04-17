@@ -243,6 +243,19 @@ export function Toolbar({
                     </select>
                   </div>
 
+                  {settings.aiProvider && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Model</label>
+                      <input 
+                        type="text"
+                        value={settings.aiModel || ''}
+                        onChange={e => setSettings({ ...settings, aiModel: e.target.value })}
+                        placeholder={settings.aiProvider === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o'}
+                        className="w-full bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-mono outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
+
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">API Key</label>
                     <input 
@@ -266,6 +279,16 @@ export function Toolbar({
                       />
                     </div>
                   )}
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Analysis Persona / Context</label>
+                    <textarea 
+                      value={settings.aiCustomPrompt || ''}
+                      onChange={e => setSettings({ ...settings, aiCustomPrompt: e.target.value })}
+                      placeholder="e.g. Focus on lean manufacturing and waste reduction..."
+                      className="w-full h-20 bg-white border border-slate-200 rounded-md px-2 py-1 text-[10px] font-medium outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    />
+                  </div>
                 </div>
               )}
             </div>

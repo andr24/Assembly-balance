@@ -1,7 +1,44 @@
 import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { Station, Connection, Metrics, GlobalSettings, AssemblyLine, SimulationResult } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+async function getChatCompletion(prompt: string, settings: GlobalSettings): Promise<string> {
+  const provider = settings.aiProvider || 'gemini';
+  const apiKey = settings.aiApiKey || (provider === 'gemini' ? process.env.GEMINI_API_KEY : '');
+  
+  if (!apiKey && provider !== 'custom') {
+    throw new Error(`API Key for ${provider} is missing. Please provide it in settings.`);
+  }
+
+  const systemContext = settings.aiCustomPrompt 
+    ? `\n\nUSER-PROVIDED CONTEXT / PERSONA:\n${settings.aiCustomPrompt}\n\n` 
+    : '';
+  
+  const fullPrompt = `${prompt}${systemContext}`;
+
+  if (provider === 'gemini') {
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: settings.aiModel || "gemini-1.5-flash",
+      contents: fullPrompt,
+    });
+    return response.text || "No response from AI.";
+  } else {
+    // OpenAI or Custom
+    const client = new OpenAI({
+      apiKey,
+      baseURL: provider === 'custom' ? settings.aiEndpoint : undefined,
+      dangerouslyAllowBrowser: true // Use with caution in production
+    });
+
+    const response = await client.chat.completions.create({
+      model: settings.aiModel || (provider === 'openai' ? 'gpt-4o' : 'custom-model'),
+      messages: [{ role: 'user', content: fullPrompt }],
+    });
+
+    return response.choices[0]?.message?.content || "No response from AI.";
+  }
+}
 
 export async function getSimulationInsights(
   stations: Station[],
@@ -38,15 +75,10 @@ export async function getSimulationInsights(
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-    });
-
-    return response.text || "Unable to generate insights at this time.";
+    return await getChatCompletion(prompt, settings);
   } catch (error) {
     console.error("Error generating AI insights:", error);
-    return "Error: Failed to connect to the AI service. Please check your configuration.";
+    return `Error: ${error instanceof Error ? error.message : "Failed to connect to the AI service."}`;
   }
 }
 
@@ -66,7 +98,7 @@ export async function analyzeLinePerformance(
     - Total Output: ${result.totalOutput} units
     - Total Defects: ${result.totalDefects}
     - Total Rework: ${result.totalRework}
-    - Yield: ${(((result.totalOutput - result.totalDefects) / result.totalOutput) * 100).toFixed(2)}%
+    - Yield: ${(((result.totalOutput - result.totalDefects) / (result.totalOutput || 1)) * 100).toFixed(2)}%
     
     Station Performance (Utilization / Starvation / Blockage):
     ${line.stations.map(s => {
@@ -87,15 +119,10 @@ export async function analyzeLinePerformance(
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-    });
-
-    return response.text || "Unable to generate analysis at this time.";
+    return await getChatCompletion(prompt, settings);
   } catch (error) {
     console.error("Error analyzing line performance:", error);
-    return "Error: Failed to connect to the AI service. Please check your configuration.";
+    return `Error: ${error instanceof Error ? error.message : "Failed to connect to the AI service."}`;
   }
 }
 
@@ -129,14 +156,9 @@ export async function getBufferSuggestions(
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-    });
-
-    return response.text || "Unable to generate buffer suggestions at this time.";
+    return await getChatCompletion(prompt, settings);
   } catch (error) {
     console.error("Error generating buffer suggestions:", error);
-    return "Error: Failed to connect to the AI service. Please check your configuration.";
+    return `Error: ${error instanceof Error ? error.message : "Failed to connect to the AI service."}`;
   }
 }

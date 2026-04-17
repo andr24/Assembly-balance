@@ -77,8 +77,10 @@ export interface GlobalSettings {
   showHeatmap?: boolean;
   enableAI?: boolean;
   aiProvider?: 'gemini' | 'openai' | 'custom';
+  aiModel?: string;
   aiApiKey?: string;
   aiEndpoint?: string; // For custom providers
+  aiCustomPrompt?: string; // User defined context for AI analysis
 }
 
 export interface Metrics {
