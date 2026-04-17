@@ -113,9 +113,9 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
   }, [stations]);
 
   return (
-    <div style={{ height }} className="bg-white border-t border-slate-200 flex flex-col z-10">
-      <div className="flex-1 flex overflow-hidden">
-        <div className="w-1/3 p-4 grid grid-cols-2 gap-3 border-r border-slate-100 overflow-y-auto">
+    <div style={{ height: window.innerWidth < 1024 ? 'auto' : height }} className="bg-white border-t border-slate-200 flex flex-col z-10 overflow-y-auto lg:overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <div className="w-full lg:w-1/3 p-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-3 border-b lg:border-b-0 lg:border-r border-slate-100 overflow-y-auto">
           <MetricCard 
             label="Output" 
             value={`${metrics.lineOutput} u/d`} 
@@ -168,9 +168,9 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
           />
         </div>
 
-        <div className="flex-1 p-4 flex flex-col min-w-0">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex bg-slate-100 p-1 rounded-lg">
+        <div className="flex-1 p-4 flex flex-col min-w-0 border-b lg:border-b-0 lg:border-r border-slate-100">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
+            <div className="flex flex-wrap bg-slate-100 p-1 rounded-lg">
               <button
                 onClick={() => setActiveTab('balance')}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
@@ -235,7 +235,7 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
             )}
           </div>
 
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-[300px] lg:min-h-0">
             {activeTab === 'balance' ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
@@ -380,8 +380,8 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
         </div>
 
         {/* Validation & Boundaries Sidebar */}
-        <div className="w-1/4 p-4 border-l border-slate-100 overflow-y-auto bg-slate-50/50 flex flex-col gap-6">
-          <div>
+        <div className="w-full lg:w-1/4 p-4 overflow-y-auto bg-slate-50/50 flex flex-col sm:flex-row lg:flex-col gap-6">
+          <div className="flex-1">
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Workforce</h3>
             <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm space-y-2">
               <div className="flex justify-between items-center">
@@ -402,7 +402,7 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
             </div>
           </div>
 
-          <div>
+          <div className="flex-1">
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Improvements</h3>
             <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-[10px] text-slate-600 space-y-3">
               {metrics.bottleneckStationId ? (
@@ -422,7 +422,7 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
             </div>
           </div>
 
-          <div>
+          <div className="flex-1">
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Critical Issues</h3>
             {validationErrors.length > 0 ? (
               <div className="space-y-2">

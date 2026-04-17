@@ -56,37 +56,41 @@ export function Toolbar({
   const [editName, setEditName] = useState('');
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-50 shadow-sm relative">
-      <div className="flex items-center gap-8">
+    <header className="min-h-[64px] bg-white border-b border-slate-200 flex flex-wrap items-center justify-between px-4 lg:px-6 z-50 shadow-sm relative gap-4 py-2 lg:py-0">
+      <div className="flex flex-wrap items-center gap-4 lg:gap-8">
         <div className="flex items-center gap-3">
-          <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-200">
+          <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-200 shrink-0">
             <BarChart3 className="text-white" size={20} />
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-slate-800 tracking-tight">LineBalancer <span className="text-blue-600 font-black italic">PRO</span></h1>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Assembly Optimization Engine</p>
+          <div className="hidden sm:block">
+            <h1 className="text-lg font-bold text-slate-800 tracking-tight leading-tight">LineBalancer <span className="text-blue-600 font-black italic">PRO</span></h1>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">Assembly Optimization Engine</p>
           </div>
         </div>
 
-        <div className="h-8 w-px bg-slate-200" />
+        <div className="h-8 w-px bg-slate-200 hidden md:block" />
 
-        <button
-          onClick={onOpenBalancer}
-          className="flex items-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 px-4 py-2 rounded-lg text-sm font-bold transition-all border border-blue-200"
-        >
-          <BarChart3 size={18} />
-          Global Balancer
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenBalancer}
+            className="flex items-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 lg:px-4 py-2 rounded-lg text-sm font-bold transition-all border border-blue-200"
+            title="Global Balancer"
+          >
+            <BarChart3 size={18} />
+            <span className="hidden lg:inline">Global Balancer</span>
+          </button>
 
-        <button
-          onClick={onOpenSimulator}
-          className="flex items-center gap-2 bg-purple-50 text-purple-700 hover:bg-purple-100 px-4 py-2 rounded-lg text-sm font-bold transition-all border border-purple-200"
-        >
-          <Activity size={18} />
-          Simulator
-        </button>
+          <button
+            onClick={onOpenSimulator}
+            className="flex items-center gap-2 bg-purple-50 text-purple-700 hover:bg-purple-100 px-3 lg:px-4 py-2 rounded-lg text-sm font-bold transition-all border border-purple-200"
+            title="Simulator"
+          >
+            <Activity size={18} />
+            <span className="hidden lg:inline">Simulator</span>
+          </button>
+        </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {isRenaming ? (
             <div className="flex items-center gap-1">
               <input 
@@ -152,7 +156,7 @@ export function Toolbar({
               </button>
             </div>
           )}
-          <div className="h-6 w-px bg-slate-200 mx-1" />
+          <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block" />
           <button 
             onClick={onAddLine}
             className="bg-white text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg font-medium transition-all border border-slate-200 shadow-sm flex items-center gap-1"
@@ -162,37 +166,37 @@ export function Toolbar({
           </button>
         </div>
 
-        <div className="h-8 w-px bg-slate-200" />
+        <div className="h-8 w-px bg-slate-200 hidden md:block" />
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="flex items-center gap-1">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Demand (u/d)</label>
+              <label className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">Demand</label>
               <InfoTooltip content="Target number of units to produce per day." position="bottom" />
             </div>
             <input 
               type="number" 
               value={settings.demand}
               onChange={e => setSettings({ ...settings, demand: Number(e.target.value) })}
-              className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              className="w-14 sm:w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="flex items-center gap-1">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Hours/Day</label>
+              <label className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">H / Day</label>
               <InfoTooltip content="Net available production time per day (excluding breaks)." position="bottom" />
             </div>
             <input 
               type="number" 
               value={settings.availableHours}
               onChange={e => setSettings({ ...settings, availableHours: Number(e.target.value) })}
-              className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              className="w-14 sm:w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-sm font-mono font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         {/* Settings Dropdown */}
         <div className="relative">
           <button 

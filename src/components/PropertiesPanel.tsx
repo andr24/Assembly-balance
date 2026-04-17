@@ -22,6 +22,7 @@ interface PropertiesPanelProps {
   setSelectedStationIds: (ids: string[]) => void;
   setSelectedGroupId: (id: string | null) => void;
   setSelectedConnId: (id: string | null) => void;
+  onClose?: () => void;
 }
 
 export function PropertiesPanel({
@@ -40,7 +41,8 @@ export function PropertiesPanel({
   deleteGroup,
   setSelectedStationIds,
   setSelectedGroupId,
-  setSelectedConnId
+  setSelectedConnId,
+  onClose
 }: PropertiesPanelProps) {
   const getSplitSum = (stationId: string) => {
     return connections
@@ -51,19 +53,31 @@ export function PropertiesPanel({
 
   return (
     <aside className="w-80 bg-white border-l border-slate-200 flex flex-col z-20 shadow-xl">
-      <div className="h-16 border-b border-slate-200 flex items-center justify-between px-6 bg-slate-50/50">
+      <div className="h-16 border-b border-slate-200 flex items-center justify-between px-6 bg-slate-50/50 flex-shrink-0">
         <div className="flex items-center gap-2">
           <Settings2 size={18} className="text-blue-600" />
           <h2 className="font-bold text-slate-800 tracking-tight">Properties</h2>
         </div>
-        {(selectedStationIds.length > 0 || selectedGroupId || selectedConnId) && (
-          <button 
-            onClick={() => { setSelectedStationIds([]); setSelectedGroupId(null); setSelectedConnId(null); }}
-            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors"
-          >
-            <X size={18} />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {(selectedStationIds.length > 0 || selectedGroupId || selectedConnId) && (
+            <button 
+              onClick={() => { setSelectedStationIds([]); setSelectedGroupId(null); setSelectedConnId(null); }}
+              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors"
+              title="Clear Selection"
+            >
+              <RefreshCw size={16} />
+            </button>
+          )}
+          {onClose && (
+            <button 
+              onClick={onClose}
+              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 transition-colors"
+              title="Close Panel"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">

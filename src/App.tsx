@@ -13,8 +13,9 @@ import { PropertiesPanel } from './components/PropertiesPanel';
 import { SummaryPanel } from './components/SummaryPanel';
 import { BalancerPage } from './components/BalancerPage';
 import { SimulationPage } from './components/SimulationPage';
-import { GripHorizontal } from 'lucide-react';
-import { AnimatePresence } from 'motion/react';
+import { GripHorizontal, Settings2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { cn } from './lib/utils';
 
 export default function App() {
   const {
@@ -51,6 +52,14 @@ export default function App() {
   const [summaryHeight, setSummaryHeight] = useState(256);
   const [isResizing, setIsResizing] = useState(false);
   const [currentView, setCurrentView] = useState<'editor' | 'balancer' | 'simulator'>('editor');
+  const [showProperties, setShowProperties] = useState(true);
+
+  // Initialize showProperties based on screen size
+  React.useEffect(() => {
+    if (window.innerWidth < 1024) {
+      setShowProperties(false);
+    }
+  }, []);
 
   // --- Handlers ---
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -248,57 +257,81 @@ export default function App() {
         addGroup={addGroup}
       />
 
-      <div className="flex-1 flex overflow-hidden">
-        <Canvas 
-          stations={stations}
-          connections={connections}
-          groups={groups}
-          metrics={metrics}
-          settings={settings}
-          selectedStationIds={selectedStationIds}
-          setSelectedStationIds={setSelectedStationIds}
-          selectedGroupId={selectedGroupId}
-          setSelectedGroupId={setSelectedGroupId}
-          selectedConnId={selectedConnId}
-          setSelectedConnId={setSelectedConnId}
-          isConnecting={isConnecting}
-          setIsConnecting={setIsConnecting}
-          connectSourceId={connectSourceId}
-          setConnectSourceId={setConnectSourceId}
-          onAddStation={addStation}
-          onAddConnection={addConnection}
-          onDelete={handleDelete}
-          duplicateStation={duplicateStation}
-          updateStation={updateStation}
-          updateConnection={updateConnection}
-          updateGroup={updateGroup}
-          deleteGroup={deleteGroup}
-          addGroup={addGroup}
-        />
+      <div className="flex-1 flex overflow-hidden lg:flex-row flex-col relative">
+        <div className="flex-1 relative overflow-hidden flex flex-col">
+          <Canvas 
+            stations={stations}
+            connections={connections}
+            groups={groups}
+            metrics={metrics}
+            settings={settings}
+            selectedStationIds={selectedStationIds}
+            setSelectedStationIds={setSelectedStationIds}
+            selectedGroupId={selectedGroupId}
+            setSelectedGroupId={setSelectedGroupId}
+            selectedConnId={selectedConnId}
+            setSelectedConnId={setSelectedConnId}
+            isConnecting={isConnecting}
+            setIsConnecting={setIsConnecting}
+            connectSourceId={connectSourceId}
+            setConnectSourceId={setConnectSourceId}
+            onAddStation={addStation}
+            onAddConnection={addConnection}
+            onDelete={handleDelete}
+            duplicateStation={duplicateStation}
+            updateStation={updateStation}
+            updateConnection={updateConnection}
+            updateGroup={updateGroup}
+            deleteGroup={deleteGroup}
+            addGroup={addGroup}
+          />
+          
+          <button 
+            onClick={() => setShowProperties(!showProperties)}
+            className="absolute right-4 top-4 z-30 lg:hidden bg-white shadow-lg p-2 rounded-full border border-slate-200 text-blue-600"
+          >
+            <Settings2 size={24} />
+          </button>
+        </div>
 
-        <PropertiesPanel 
-          selectedStationIds={selectedStationIds}
-          selectedGroupId={selectedGroupId}
-          selectedConnId={selectedConnId}
-          stations={stations}
-          connections={connections}
-          metrics={metrics}
-          settings={settings}
-          lines={lines}
-          activeLineId={activeLineId}
-          updateStation={updateStation}
-          updateConnection={updateConnection}
-          updateGroup={updateGroup}
-          deleteGroup={deleteGroup}
-          setSelectedStationIds={setSelectedStationIds}
-          setSelectedGroupId={setSelectedGroupId}
-          setSelectedConnId={setSelectedConnId}
-        />
+        <motion.div 
+          initial={false}
+          animate={{ 
+            width: showProperties ? (window.innerWidth < 1024 ? '100%' : 320) : 0,
+            opacity: showProperties ? 1 : 0
+          }}
+          className={cn(
+            "lg:relative absolute right-0 top-0 bottom-0 z-40 bg-white border-l border-slate-200 flex flex-col shadow-xl overflow-hidden",
+            !showProperties && "border-none"
+          )}
+        >
+          <div className="min-w-[320px] h-full flex flex-col">
+            <PropertiesPanel 
+              selectedStationIds={selectedStationIds}
+              selectedGroupId={selectedGroupId}
+              selectedConnId={selectedConnId}
+              stations={stations}
+              connections={connections}
+              metrics={metrics}
+              settings={settings}
+              lines={lines}
+              activeLineId={activeLineId}
+              updateStation={updateStation}
+              updateConnection={updateConnection}
+              updateGroup={updateGroup}
+              deleteGroup={deleteGroup}
+              setSelectedStationIds={setSelectedStationIds}
+              setSelectedGroupId={setSelectedGroupId}
+              setSelectedConnId={setSelectedConnId}
+              onClose={() => setShowProperties(false)}
+            />
+          </div>
+        </motion.div>
       </div>
 
       <div 
         onMouseDown={handleMouseDown}
-        className="h-1.5 bg-slate-200 hover:bg-blue-400 cursor-row-resize transition-colors flex items-center justify-center group z-30"
+        className="h-1.5 bg-slate-200 hover:bg-blue-400 cursor-row-resize transition-colors lg:flex hidden items-center justify-center group z-30"
       >
         <div className="w-12 h-1 bg-slate-300 group-hover:bg-white rounded-full flex items-center justify-center">
           <GripHorizontal size={10} className="text-slate-400 group-hover:text-blue-600" />
