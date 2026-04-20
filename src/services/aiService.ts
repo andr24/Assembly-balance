@@ -16,27 +16,35 @@ async function getChatCompletion(prompt: string, settings: GlobalSettings): Prom
   
   const fullPrompt = `${prompt}${systemContext}`;
 
-  if (provider === 'gemini') {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: settings.aiModel || "gemini-1.5-flash",
-      contents: fullPrompt,
-    });
-    return response.text || "No response from AI.";
-  } else {
-    // OpenAI or Custom
-    const client = new OpenAI({
-      apiKey,
-      baseURL: provider === 'custom' ? settings.aiEndpoint : undefined,
-      dangerouslyAllowBrowser: true // Use with caution in production
-    });
+  try {
+    if (provider === 'gemini') {
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: settings.aiModel || "gemini-1.5-flash",
+        contents: fullPrompt,
+      });
+      return response.text || "No response from AI.";
+    } else {
+      // OpenAI or Custom
+      const client = new OpenAI({
+        apiKey,
+        baseURL: provider === 'custom' ? settings.aiEndpoint : undefined,
+        dangerouslyAllowBrowser: true // Use with caution in production
+      });
 
-    const response = await client.chat.completions.create({
-      model: settings.aiModel || (provider === 'openai' ? 'gpt-4o' : 'custom-model'),
-      messages: [{ role: 'user', content: fullPrompt }],
-    });
+      const response = await client.chat.completions.create({
+        model: settings.aiModel || (provider === 'openai' ? 'gpt-4o' : 'custom-model'),
+        messages: [{ role: 'user', content: fullPrompt }],
+      });
 
-    return response.choices[0]?.message?.content || "No response from AI.";
+      return response.choices[0]?.message?.content || "No response from AI.";
+    }
+  } catch (error: any) {
+    const errorMsg = error.message || String(error);
+    if (errorMsg.includes('API key expired') || errorMsg.includes('API_KEY_INVALID') || errorMsg.includes('invalid_api_key')) {
+      throw new Error(`The ${provider.toUpperCase()} API key is expired or invalid. Please check your settings or environment variables and update the key.`);
+    }
+    throw error;
   }
 }
 

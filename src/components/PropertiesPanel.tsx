@@ -243,7 +243,7 @@ export function PropertiesPanel({
                             <input 
                               type="number" 
                               step="any"
-                              value={s.cycleTime || ''}
+                              value={s.cycleTime ? Number(s.cycleTime.toFixed(8)) : ''}
                               onChange={e => {
                                 const val = e.target.value === '' ? 0 : Number(e.target.value);
                                 updateStation(selectedId, { cycleTime: val });
@@ -422,7 +422,7 @@ export function PropertiesPanel({
                             <input 
                               type="number" 
                               step="any"
-                              value={s.cycleTime || ''}
+                              value={s.cycleTime ? Number(s.cycleTime.toFixed(8)) : ''}
                               onChange={e => {
                                 const val = e.target.value === '' ? 0 : Number(e.target.value);
                                 updateStation(selectedId, { cycleTime: val });

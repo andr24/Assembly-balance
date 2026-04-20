@@ -947,22 +947,12 @@ export function Canvas({
                   return null;
                 })()}
                 
-                {settings.showVsmInfo && isInventory && (
+                {settings.showVsmInfo && isInventory && !s.isKanbanSource && (
                   <g transform={`translate(0, ${height + 25})`}>
                     {(() => {
                       const flowFactor = metrics.flowFactors?.[s.id] || 0;
                       const inventory = s.targetInventory || 0;
-                      const maxStationLoad = stations.reduce((max, st) => {
-                        if (st.type === 'inventory') return max;
-                        const ff = metrics.flowFactors?.[st.id] || 0;
-                        const fte = st.fte || 1;
-                        const effectiveCT = st.type === 'machine' 
-                          ? st.cycleTime / (st.batchSize || 1)
-                          : st.cycleTime / fte;
-                        const load = effectiveCT * ff;
-                        return Math.max(max, load);
-                      }, 0);
-                      const systemTaktActual = Math.max(metrics.adjustedTakt, maxStationLoad);
+                      const systemTaktActual = metrics.systemTakt;
                       const leadTime = flowFactor > 0 ? (inventory * systemTaktActual / flowFactor) : 0;
                       
                       return (
@@ -987,10 +977,19 @@ export function Canvas({
                     <line x1={width/2} y1="0" x2={width/2} y2="60" stroke="#e2e8f0" />
                     
                     {/* Row 1 */}
-                    <text x="6" y="14" className="text-[8px] font-bold fill-slate-400 uppercase">C/T</text>
+                    <text x="6" y="14" className="text-[8px] font-bold fill-slate-400 uppercase">Eff. C/T</text>
                     <text x={width/2 - 6} y="14" textAnchor="end" className="text-[10px] font-mono font-bold fill-slate-700">
-                      <title>Cycle Time: The time it takes to complete one unit of work at this station.</title>
-                      {s.cycleTime}m
+                      <title>Effective Cycle Time: Per-unit time including setup, batching, and FTE factors.</title>
+                      {(() => {
+                        const learningFactor = (s.learningCurve || 100) / 100;
+                        const setupPerUnit = (s.setupTime || 0) / (s.batchSize || 1);
+                        const handlingTime = (s.materialHandlingTime || 0);
+                        const fte = s.fte || 1;
+                        const effectiveCT = isMachine 
+                          ? (s.cycleTime / (s.batchSize || 1)) + setupPerUnit + handlingTime
+                          : (s.cycleTime / (fte * learningFactor)) + setupPerUnit + handlingTime;
+                        return Number(effectiveCT.toFixed(2));
+                      })()}m
                     </text>
                     
                     <text x={width/2 + 6} y="14" className="text-[8px] font-bold fill-slate-400 uppercase">{isMachine ? 'Cap' : 'FTE'}</text>
@@ -1136,14 +1135,24 @@ export function Canvas({
                     const flowFactor = metrics.flowFactors?.[s.id] || 0;
                     const systemTaktActual = metrics.systemTakt;
                     
-                    const time = isInv 
+                    const time = s.isKanbanSource ? 0 : (isInv 
                       ? (flowFactor > 0 ? (s.targetInventory || 0) * systemTaktActual / flowFactor : 0)
-                      : (s.type === 'machine' ? s.cycleTime / (s.batchSize || 1) : s.cycleTime / (s.fte || 1));
+                      : (() => {
+                          const learningFactor = (s.learningCurve || 100) / 100;
+                          const setupPerUnit = (s.setupTime || 0) / (s.batchSize || 1);
+                          const handlingTime = (s.materialHandlingTime || 0);
+                          const fte = s.fte || 1;
+                          return s.type === 'machine' 
+                            ? (s.cycleTime / (s.batchSize || 1)) + setupPerUnit + handlingTime
+                            : (s.cycleTime / (fte * learningFactor)) + setupPerUnit + handlingTime;
+                        })());
 
-                    if (isInv) totalNVA += time;
-                    else totalVA += time;
+                    if (!s.isKanbanSource) {
+                      if (isInv) totalNVA += time;
+                      else totalVA += time;
+                    }
 
-                    const targetY = isInv ? 20 : 70;
+                    const targetY = (isInv || s.isKanbanSource) ? 20 : 70;
                     
                     if (i === 0) {
                       points.push(`M 0 ${targetY}`);

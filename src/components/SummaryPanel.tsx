@@ -48,7 +48,15 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
   };
   const chartData = stations.map(s => {
     const flowFactor = metrics.flowFactors?.[s.id] || 0;
-    const effectiveCT = s.type === 'machine' ? s.cycleTime / (s.batchSize || 1) : s.cycleTime / s.fte;
+    const learningFactor = (s.learningCurve || 100) / 100;
+    const setupPerUnit = (s.setupTime || 0) / (s.batchSize || 1);
+    const handlingTime = (s.materialHandlingTime || 0);
+    const fte = s.fte || 1;
+    
+    const effectiveCT = s.type === 'machine' 
+      ? (s.cycleTime / (s.batchSize || 1)) + setupPerUnit + handlingTime
+      : (s.cycleTime / (fte * learningFactor)) + setupPerUnit + handlingTime;
+    
     const load = effectiveCT * flowFactor;
     
     return {
@@ -95,7 +103,15 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
     const activeStations = stations.filter(s => s.type !== 'inventory');
     if (activeStations.length === 0) return [];
     
-    const cts = activeStations.map(s => s.cycleTime);
+    const cts = activeStations.map(s => {
+      const learningFactor = (s.learningCurve || 100) / 100;
+      const setupPerUnit = (s.setupTime || 0) / (s.batchSize || 1);
+      const handlingTime = (s.materialHandlingTime || 0);
+      const fte = s.fte || 1;
+      return s.type === 'machine' 
+        ? (s.cycleTime / (s.batchSize || 1)) + setupPerUnit + handlingTime
+        : (s.cycleTime / (fte * learningFactor)) + setupPerUnit + handlingTime;
+    });
     const min = Math.min(...cts);
     const max = Math.max(...cts);
     const bins = 5;

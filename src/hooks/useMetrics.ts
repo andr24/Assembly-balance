@@ -93,7 +93,9 @@ export function useMetrics(stations: Station[], connections: Connection[], setti
       const setupPerUnit = (station.setupTime || 0) / (station.batchSize || 1);
       const handlingTime = (station.materialHandlingTime || 0);
 
-      if (station.type === 'inventory') {
+      if (station.isKanbanSource) {
+        currentWaitTime = 0;
+      } else if (station.type === 'inventory') {
         // Time in inventory = targetInventory * systemTakt / flowFactor
         const inventory = station.targetInventory || 0;
         currentWaitTime = flowFactor > 0 ? inventory * systemTakt / flowFactor : 0;
@@ -155,11 +157,14 @@ export function useMetrics(stations: Station[], connections: Connection[], setti
     criticalPathStationIds.forEach(id => {
       const s = stations.find(st => st.id === id);
       if (!s) return;
+      if (s.isKanbanSource) return;
+
       if (s.type === 'inventory') {
         const ff = flowFactors[id] || 0;
         nvaTime += ff > 0 ? (s.targetInventory || 0) * systemTakt / ff : 0;
       } else {
-        vaTime += s.cycleTime;
+        const batch = s.batchSize || 1;
+        vaTime += (s.cycleTime / batch);
       }
     });
 
