@@ -113,7 +113,10 @@ export function SummaryPanel({ metrics, stations, connections, settings, height 
   }, [stations]);
 
   return (
-    <div style={{ height: window.innerWidth < 1024 ? 'auto' : height }} className="bg-white border-t border-slate-200 flex flex-col z-10 overflow-y-auto lg:overflow-hidden">
+    <div 
+      style={{ height: window.innerWidth < 1024 ? 'auto' : height }} 
+      className="bg-white border-t border-slate-200 flex flex-col z-10 overflow-y-auto lg:overflow-hidden max-h-[60vh] lg:max-h-none shadow-2xl lg:shadow-none"
+    >
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         <div className="w-full lg:w-1/3 p-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-3 border-b lg:border-b-0 lg:border-r border-slate-100 overflow-y-auto">
           <MetricCard 

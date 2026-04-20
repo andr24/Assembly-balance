@@ -52,7 +52,7 @@ export function PropertiesPanel({
   const selectedId = selectedStationIds[0];
 
   return (
-    <aside className="w-80 bg-white border-l border-slate-200 flex flex-col z-20 shadow-xl">
+    <aside className="w-full lg:w-80 bg-white border-l border-slate-200 flex flex-col z-20 shadow-xl h-full">
       <div className="h-16 border-b border-slate-200 flex items-center justify-between px-6 bg-slate-50/50 flex-shrink-0">
         <div className="flex items-center gap-2">
           <Settings2 size={18} className="text-blue-600" />
@@ -80,7 +80,7 @@ export function PropertiesPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
         <AnimatePresence mode="wait">
           {selectedGroupId ? (
             <motion.div

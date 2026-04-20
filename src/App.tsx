@@ -298,7 +298,7 @@ export default function App() {
             !showProperties && "border-none"
           )}
         >
-          <div className="min-w-[320px] h-full flex flex-col">
+          <div className="w-full lg:min-w-[320px] h-full flex flex-col">
             <PropertiesPanel 
               selectedStationIds={selectedStationIds}
               selectedGroupId={selectedGroupId}
