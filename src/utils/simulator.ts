@@ -303,7 +303,7 @@ export function runSimulation(
 
         const missingFromGroups: string[] = [];
         const canPullAllGroups = Object.entries(groups).every(([groupKey, conns]) => {
-          const hasPart = conns.some(c => hasAvailableParts(s.id, c.sourceId, 1));
+          const hasPart = conns.some(c => hasAvailableParts(s.id, c.sourceId, Math.max(1, c.partsPerAssembly || 1)));
           if (!hasPart) {
             const sourceNames = conns.map(c => stations.find(st => st.id === c.sourceId)?.name || 'Unknown');
             missingFromGroups.push(...sourceNames);
@@ -314,8 +314,8 @@ export function runSimulation(
         if (canPullAllGroups) {
           // Pull one from each group
           Object.values(groups).forEach(conns => {
-            const conn = conns.find(c => hasAvailableParts(s.id, c.sourceId, 1));
-            if (conn) consumeParts(s.id, conn.sourceId, 1);
+            const conn = conns.find(c => hasAvailableParts(s.id, c.sourceId, Math.max(1, c.partsPerAssembly || 1)));
+            if (conn) consumeParts(s.id, conn.sourceId, Math.max(1, conn.partsPerAssembly || 1));
           });
           const effectiveFte = (s.fte || 1) * staffingRatio;
           const baseCT = s.type === 'machine' ? s.cycleTime : s.cycleTime / effectiveFte;
@@ -332,6 +332,7 @@ export function runSimulation(
         }
       } else {
         // Additive logic (default): Pull from ANY available upstream connection
+        // Additive pulls exactly 1 part from any available connection
         const canPull = upstreamConns.length === 0 || upstreamConns.some(c => hasAvailableParts(s.id, c.sourceId, 1));
         if (canPull) {
           if (upstreamConns.length > 0) {

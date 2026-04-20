@@ -20,19 +20,51 @@ const INITIAL_LINE: AssemblyLine = {
 
 const SUB_ASSEMBLY_LINE: AssemblyLine = {
   id: 'line2',
-  name: 'Kanban & Assembly Demo',
+  name: 'Complex Hybrid Factory',
   stations: [
-    { id: 'raw', name: 'Raw Materials', cycleTime: 0, fte: 0, x: 100, y: 100, type: 'inventory', isKanbanSource: true },
-    { id: 'sub1', name: 'Sub-Assembly', cycleTime: 4, fte: 1, x: 300, y: 100, type: 'station' },
-    { id: 'parts', name: 'Purchased Parts', cycleTime: 0, fte: 0, x: 300, y: 300, type: 'inventory', isKanbanSource: true },
-    { id: 'main', name: 'Main Assembly', cycleTime: 6, fte: 2, x: 500, y: 200, type: 'station', flowMode: 'assembly' },
-    { id: 'pack', name: 'Packaging', cycleTime: 5, fte: 1, x: 700, y: 200, type: 'station' }
+    // --- Inputs ---
+    { id: 'chassis', name: 'Chassis Weld', cycleTime: 10, fte: 2, x: 50, y: 300, type: 'machine', batchSize: 1 },
+    
+    // Wheels (50/50 Mix: 2 internal, 2 external per car)
+    { id: 'whl_int', name: 'Internal Wheels', cycleTime: 4, fte: 2, x: 50, y: 150, type: 'machine', batchSize: 1 },
+    { id: 'whl_ext', name: 'Kanban Wheels (Ext)', cycleTime: 0, fte: 0, x: 50, y: 50, type: 'inventory', isKanbanSource: true },
+    
+    // Engine (OR Logic: Try internal first, then Kanban backup)
+    { id: 'eng_int', name: 'Engine Build', cycleTime: 15, fte: 3, x: 50, y: 450, type: 'machine', batchSize: 1 },
+    { id: 'eng_ext', name: 'Supplier Backup Engines', cycleTime: 0, fte: 0, x: 50, y: 550, type: 'inventory', isKanbanSource: true },
+    
+    // --- Main Assembly ---
+    { id: 'main', name: 'Main Assembly', cycleTime: 15, fte: 4, x: 350, y: 300, type: 'station', flowMode: 'assembly' },
+    
+    // --- Splitting (Routes) ---
+    { id: 'std_finish', name: 'Standard Finish', cycleTime: 8, fte: 2, x: 600, y: 200, type: 'station' },
+    { id: 'prm_finish', name: 'Premium Trim', cycleTime: 14, fte: 3, x: 600, y: 400, type: 'station' },
+    
+    // --- QA & Rework ---
+    { id: 'qa', name: 'Premium QA', cycleTime: 5, fte: 1, x: 800, y: 400, type: 'station' },
+    { id: 'ship', name: 'Shipping Dock', cycleTime: 2, fte: 1, x: 1000, y: 300, type: 'station' }
   ],
   connections: [
-    { id: 'c1', sourceId: 'raw', targetId: 'sub1', splitPercent: 100, isRework: false },
-    { id: 'c2', sourceId: 'sub1', targetId: 'main', splitPercent: 100, isRework: false, inputGroup: 'sub-parts' },
-    { id: 'c3', sourceId: 'parts', targetId: 'main', splitPercent: 100, isRework: false, inputGroup: 'purchased' },
-    { id: 'c4', sourceId: 'main', targetId: 'pack', splitPercent: 100, isRework: false }
+    // Feeds to Main Assembly
+    { id: 'c1', sourceId: 'chassis', targetId: 'main', splitPercent: 100, isRework: false, inputGroup: 'chassis', partsPerAssembly: 1 },
+    { id: 'c2', sourceId: 'whl_int', targetId: 'main', splitPercent: 100, isRework: false, inputGroup: 'wheel_int', partsPerAssembly: 2 },
+    { id: 'c3', sourceId: 'whl_ext', targetId: 'main', splitPercent: 100, isRework: false, inputGroup: 'wheel_ext', partsPerAssembly: 2 },
+    
+    // OR Logic: Notice they share the exact same 'engine' input group, simulation pulls from whatever is available!
+    { id: 'c4', sourceId: 'eng_int', targetId: 'main', splitPercent: 100, isRework: false, inputGroup: 'engine', partsPerAssembly: 1 },
+    { id: 'c5', sourceId: 'eng_ext', targetId: 'main', splitPercent: 100, isRework: false, inputGroup: 'engine', partsPerAssembly: 1 },
+    
+    // Volume Splitting (70% Standard, 30% Premium)
+    { id: 'c6', sourceId: 'main', targetId: 'std_finish', splitPercent: 70, isRework: false },
+    { id: 'c7', sourceId: 'main', targetId: 'prm_finish', splitPercent: 30, isRework: false },
+    
+    // Converging Logic
+    { id: 'c8', sourceId: 'std_finish', targetId: 'ship', splitPercent: 100, isRework: false },
+    { id: 'c9', sourceId: 'prm_finish', targetId: 'qa', splitPercent: 100, isRework: false },
+    
+    // Quality Split & Rework Loop
+    { id: 'c10', sourceId: 'qa', targetId: 'ship', splitPercent: 90, isRework: false },
+    { id: 'c11', sourceId: 'qa', targetId: 'prm_finish', splitPercent: 10, isRework: true, waypoints: [{ x: 700, y: 500 }] }
   ]
 };
 

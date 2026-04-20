@@ -43,6 +43,7 @@ export interface Connection {
   waypoints?: { x: number; y: number }[];
   transitTime?: number; // minutes to travel between stations
   inputGroup?: string; // For OR logic in assembly mode
+  partsPerAssembly?: number; // How many units are pulled from this source per assembly cycle
 }
 
 export interface AssemblyLine {

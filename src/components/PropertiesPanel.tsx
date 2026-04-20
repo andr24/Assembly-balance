@@ -824,6 +824,29 @@ export function PropertiesPanel({
                         />
                       </div>
 
+                      {target?.flowMode === 'assembly' && (
+                        <div className="space-y-1.5 border-t border-slate-100 pt-4 mt-2">
+                          <div className="flex items-center gap-1">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Qty Per Assembly</label>
+                            <InfoTooltip content="Number of parts from this source required to build ONE assembled unit at the target station." />
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <input 
+                              type="range" 
+                              min="1" 
+                              max="10" 
+                              step="1"
+                              value={conn.partsPerAssembly || 1}
+                              onChange={e => updateConnection(selectedConnId, { partsPerAssembly: Number(e.target.value) })}
+                              className="flex-1 accent-purple-600"
+                            />
+                            <span className="text-sm font-mono font-bold w-10 text-right text-purple-700">
+                              {conn.partsPerAssembly || 1}x
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       {conn.waypoints && conn.waypoints.length > 0 && (
                         <div className="pt-2">
                           <button 

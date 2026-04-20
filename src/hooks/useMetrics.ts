@@ -27,8 +27,38 @@ export function useMetrics(stations: Station[], connections: Connection[], setti
           if (isEntry) newFactor = 1.0;
 
           if (s.flowMode === 'assembly') {
-            const incomingFactors = incoming.map(c => (flowFactors[c.sourceId] || 0) * (c.splitPercent / 100));
-            newFactor = Math.max(newFactor, ...incomingFactors);
+            const groups: Record<string, { flow: number; hasKanban: boolean }> = {};
+            incoming.forEach(c => {
+              const groupKey = c.inputGroup || `default-${c.id}`;
+              if (!groups[groupKey]) {
+                groups[groupKey] = { flow: 0, hasKanban: false };
+              }
+              const sourceStation = stations.find(st => st.id === c.sourceId);
+              if (sourceStation?.isKanbanSource) {
+                groups[groupKey].hasKanban = true;
+              }
+              const required = Math.max(1, c.partsPerAssembly || 1);
+              const flowIn = (flowFactors[c.sourceId] || 0) * (c.splitPercent / 100);
+              groups[groupKey].flow += (flowIn / required);
+            });
+
+            let minFlow = Infinity;
+            let hasAnyNonKanbanGroup = false;
+
+            Object.values(groups).forEach(g => {
+              if (!g.hasKanban) {
+                hasAnyNonKanbanGroup = true;
+                minFlow = Math.min(minFlow, g.flow);
+              }
+            });
+
+            if (hasAnyNonKanbanGroup && minFlow !== Infinity) {
+              newFactor = minFlow;
+            } else if (Object.keys(groups).length > 0) {
+              newFactor = 1.0; // All groups are kanban or provide infinite flow
+            } else {
+              newFactor = 0;
+            }
           } else {
             incoming.forEach(c => {
               const sourceFactor = flowFactors[c.sourceId] || 0;
